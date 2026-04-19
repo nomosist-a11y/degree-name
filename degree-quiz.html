@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>度数クイズ</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #121212;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 24px 16px 40px;
+  }
+
+  /* ---- header ---- */
+  .header-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    width: 100%;
+    max-width: 480px;
+  }
+
+  h1 {
+    font-size: 1.15rem;
+    color: #888;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    flex: 1;
+  }
+
+  .pill-btn {
+    background: #1e1e1e;
+    border: 1.5px solid #444;
+    border-radius: 20px;
+    color: #aaa;
+    font-size: 0.78rem;
+    padding: 5px 11px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+
+  .pill-btn.on {
+    border-color: #7c8cf8;
+    color: #7c8cf8;
+    background: #1a1c30;
+  }
+
+  /* ---- settings panel ---- */
+  .settings-panel {
+    width: 100%;
+    max-width: 480px;
+    background: #181818;
+    border: 1px solid #2a2a2a;
+    border-radius: 14px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+
+  .settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.85rem;
+    color: #aaa;
+    transition: background 0.15s;
+  }
+
+  .settings-header:hover { background: #1e1e1e; }
+
+  .settings-arrow {
+    font-size: 0.7rem;
+    transition: transform 0.25s;
+    color: #555;
+  }
+
+  .settings-panel.open .settings-arrow { transform: rotate(180deg); }
+
+  .settings-body {
+    display: none;
+    padding: 0 16px 16px;
+    border-top: 1px solid #242424;
+  }
+
+  .settings-panel.open .settings-body { display: block; }
+
+  .settings-section {
+    margin-top: 14px;
+  }
+
+  .settings-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .settings-section-title {
+    font-size: 0.72rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .select-btns {
+    display: flex;
+    gap: 6px;
+  }
+
+  .mini-btn {
+    background: transparent;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #666;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: border-color 0.1s, color 0.1s;
+  }
+
+  .mini-btn:hover { border-color: #555; color: #aaa; }
+
+  /* chip-style toggles */
+  .chip-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .chip {
+    padding: 5px 11px;
+    border-radius: 16px;
+    border: 1.5px solid #2e2e2e;
+    font-size: 0.82rem;
+    cursor: pointer;
+    user-select: none;
+    color: #666;
+    background: #1a1a1a;
+    transition: border-color 0.12s, color 0.12s, background 0.12s;
+  }
+
+  .chip.active {
+    border-color: #7c8cf8;
+    color: #c4cafc;
+    background: #1a1c30;
+  }
+
+  /* presets */
+  .presets-section { margin-top: 14px; }
+
+  .presets-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .preset-btn {
+    background: #1e1e1e;
+    border: 1.5px solid #2e2e2e;
+    border-radius: 10px;
+    color: #888;
+    font-size: 0.75rem;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: border-color 0.12s, color 0.12s, background 0.12s;
+  }
+
+  .preset-btn:hover {
+    border-color: #555;
+    color: #ccc;
+    background: #242424;
+  }
+
+  /* validation warning */
+  .validation-warn {
+    display: none;
+    margin-top: 8px;
+    font-size: 0.78rem;
+    color: #f87171;
+    text-align: center;
+  }
+
+  .validation-warn.visible { display: block; }
+
+  /* ---- stats ---- */
+  .stats {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 20px;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .stat-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #e0e0e0;
+  }
+
+  .stat-label {
+    font-size: 0.7rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* ---- question card ---- */
+  .question-card {
+    background: #1e1e1e;
+    border: 1px solid #2e2e2e;
+    border-radius: 16px;
+    padding: 28px 32px;
+    text-align: center;
+    margin-bottom: 24px;
+    width: 100%;
+    max-width: 480px;
+    min-height: 110px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .question-label {
+    font-size: 0.75rem;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .question-text {
+    font-size: 2.2rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: 0.02em;
+  }
+
+  .question-text .key    { color: #7c8cf8; }
+  .question-text .degree { color: #f8c471; }
+
+  .degree-sub {
+    font-size: 0.95rem;
+    font-weight: 400;
+    color: #aaa;
+  }
+
+  .feedback {
+    font-size: 0.95rem;
+    font-weight: 600;
+    min-height: 1.4em;
+    transition: color 0.15s;
+  }
+
+  .feedback.correct { color: #4ade80; }
+  .feedback.wrong   { color: #f87171; }
+
+  /* ---- answer buttons ---- */
+  .buttons-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 9px;
+    width: 100%;
+    max-width: 480px;
+  }
+
+  .note-btn {
+    background: #1e1e1e;
+    border: 1.5px solid #333;
+    border-radius: 12px;
+    color: #e0e0e0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    padding: 17px 6px;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s, transform 0.08s;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .note-btn:active { transform: scale(0.95); }
+
+  .note-btn:hover:not(:disabled) {
+    background: #2a2a2a;
+    border-color: #555;
+  }
+
+  .note-btn.correct-ans { background: #14532d; border-color: #4ade80; color: #4ade80; }
+  .note-btn.wrong-ans   { background: #450a0a; border-color: #f87171; color: #f87171; }
+  .note-btn:disabled    { cursor: default; opacity: 0.7; }
+
+  /* ---- legend ---- */
+  .legend {
+    margin-top: 24px;
+    max-width: 480px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 11px 14px;
+    font-size: 0.72rem;
+    color: #555;
+    line-height: 1.6;
+    text-align: center;
+  }
+
+  .legend strong { color: #777; }
+</style>
+</head>
+<body>
+
+<!-- header -->
+<div class="header-row">
+  <h1>度数クイズ</h1>
+  <button class="pill-btn on" id="sound-toggle">🔊 音</button>
+  <button class="pill-btn on" id="settings-toggle-btn">⚙ 設定</button>
+</div>
+
+<!-- settings panel -->
+<div class="settings-panel" id="settings-panel">
+  <div class="settings-header" id="settings-header">
+    <span>出題範囲の設定</span>
+    <span class="settings-arrow">▼</span>
+  </div>
+  <div class="settings-body" id="settings-body">
+
+    <!-- keys -->
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <span class="settings-section-title">キー</span>
+        <div class="select-btns">
+          <button class="mini-btn" id="keys-all">全選択</button>
+          <button class="mini-btn" id="keys-none">全解除</button>
+        </div>
+      </div>
+      <div class="chip-group" id="keys-chips"></div>
+    </div>
+
+    <!-- degrees -->
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <span class="settings-section-title">度数</span>
+        <div class="select-btns">
+          <button class="mini-btn" id="deg-all">全選択</button>
+          <button class="mini-btn" id="deg-none">全解除</button>
+        </div>
+      </div>
+      <div class="chip-group" id="deg-chips"></div>
+    </div>
+
+    <!-- presets -->
+    <div class="presets-section">
+      <div class="settings-section-title">プリセット</div>
+      <div class="presets-group" id="presets-group"></div>
+    </div>
+
+    <div class="validation-warn" id="validation-warn">⚠ キーと度数をそれぞれ最低1つ選択してください</div>
+  </div>
+</div>
+
+<!-- stats -->
+<div class="stats">
+  <div class="stat">
+    <span class="stat-value" id="streak">0</span>
+    <span class="stat-label">Streak</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value" id="score">0 / 0</span>
+    <span class="stat-label">正解 / 問題</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value" id="pct">—</span>
+    <span class="stat-label">正答率</span>
+  </div>
+</div>
+
+<!-- question -->
+<div class="question-card">
+  <div class="question-label">キーの度数は？</div>
+  <div class="question-text" id="question-text">...</div>
+  <div class="feedback" id="feedback"></div>
+</div>
+
+<!-- answer buttons -->
+<div class="buttons-grid" id="buttons-grid"></div>
+
+<!-- legend -->
+<div class="legend">
+  <strong>ジャズ表記：</strong>
+  数字はメジャースケール基準（3 = 長3度、7 = 長7度）。b / # は半音下・上。
+  テンションはコードトーンと同じ音名の1オクターブ上：9 = 2度、11 = 4度、13 = 6度。
+</div>
+
+<script>
+// ============================================================
+// Constants
+// ============================================================
+const NOTES = ['C','Db','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+const DEGREES = [
+  // コードトーン（semitones = 実際の半音数、mod12で音名・そのまま使うとオクターブ計算に使える）
+  { label: '1',   ja: '完全1度',  semitones: 0  },
+  { label: 'b3',  ja: '短3度',    semitones: 3  },
+  { label: '3',   ja: '長3度',    semitones: 4  },
+  { label: 'b5',  ja: '減5度',    semitones: 6  },
+  { label: '5',   ja: '完全5度',  semitones: 7  },
+  { label: 'b7',  ja: '短7度',    semitones: 10 },
+  { label: '7',   ja: '長7度',    semitones: 11 },
+  // テンション（13以上 → 常にオクターブ5に配置される）
+  { label: 'b9',  ja: '短9度',    semitones: 13 },
+  { label: '9',   ja: '長9度',    semitones: 14 },
+  { label: '#9',  ja: '増9度',    semitones: 15 },
+  { label: '11',  ja: '完全11度', semitones: 17 },
+  { label: '#11', ja: '増11度',   semitones: 18 },
+  { label: 'b13', ja: '短13度',   semitones: 20 },
+  { label: '13',  ja: '長13度',   semitones: 21 },
+];
+
+const ALL_DEGREE_LABELS = ['1','b3','3','b5','5','b7','7','b9','9','#9','11','#11','b13','13'];
+
+const PRESETS = [
+  // コードトーン系
+  { label: '基本',               keys: null, degrees: ['1','3','5','7'] },
+  { label: 'マイナー7th',        keys: null, degrees: ['1','b3','5','b7'] },
+  { label: 'ドミナント7th',      keys: null, degrees: ['1','3','5','b7'] },
+  { label: 'ハーフディム',       keys: null, degrees: ['1','b3','b5','b7'] },
+  // テンション系
+  { label: 'テンション基本',     keys: null, degrees: ['9','11','13'] },
+  { label: 'オルタード',         keys: null, degrees: ['b9','#9','#11','b13'] },
+  { label: 'メジャー系',         keys: null, degrees: ['1','3','5','7','9','#11','13'] },
+  { label: 'ドミナント7th拡張',  keys: null, degrees: ['1','3','5','b7','9','#11','13'] },
+  { label: '全部入り',           keys: [...NOTES], degrees: ALL_DEGREE_LABELS },
+  // キー系
+  { label: 'フラット系キー',     keys: ['F','Bb','Eb','Ab','Db'], degrees: null },
+  { label: 'シャープ系キー',     keys: ['G','D','A','E','B'],     degrees: null },
+];
+
+// ============================================================
+// Settings state (backed by localStorage)
+// ============================================================
+const LS_KEYS = 'dq_enabled_keys';
+const LS_DEG  = 'dq_enabled_degrees';
+
+let enabledKeys    = new Set(NOTES);
+let enabledDegrees = new Set(DEGREES.map(d => d.label));
+
+function loadSettings() {
+  try {
+    const k = localStorage.getItem(LS_KEYS);
+    const d = localStorage.getItem(LS_DEG);
+    if (k) enabledKeys    = new Set(JSON.parse(k));
+    if (d) enabledDegrees = new Set(JSON.parse(d));
+  } catch (_) {}
+}
+
+function saveSettings() {
+  localStorage.setItem(LS_KEYS, JSON.stringify([...enabledKeys]));
+  localStorage.setItem(LS_DEG,  JSON.stringify([...enabledDegrees]));
+}
+
+function isValid() {
+  return enabledKeys.size > 0 && enabledDegrees.size > 0;
+}
+
+// ============================================================
+// Settings UI
+// ============================================================
+function buildChips() {
+  // Keys chips
+  const keysContainer = document.getElementById('keys-chips');
+  NOTES.forEach(note => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (enabledKeys.has(note) ? ' active' : '');
+    chip.textContent = note;
+    chip.dataset.key = note;
+    chip.addEventListener('click', () => {
+      enabledKeys.has(note) ? enabledKeys.delete(note) : enabledKeys.add(note);
+      chip.classList.toggle('active', enabledKeys.has(note));
+      saveSettings();
+      onSettingsChange();
+    });
+    keysContainer.appendChild(chip);
+  });
+
+  // Degrees chips
+  const degContainer = document.getElementById('deg-chips');
+  DEGREES.forEach(deg => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (enabledDegrees.has(deg.label) ? ' active' : '');
+    chip.textContent = `${deg.label} (${deg.ja})`;
+    chip.dataset.deg = deg.label;
+    chip.addEventListener('click', () => {
+      enabledDegrees.has(deg.label) ? enabledDegrees.delete(deg.label) : enabledDegrees.add(deg.label);
+      chip.classList.toggle('active', enabledDegrees.has(deg.label));
+      saveSettings();
+      onSettingsChange();
+    });
+    degContainer.appendChild(chip);
+  });
+}
+
+function refreshChips() {
+  document.querySelectorAll('#keys-chips .chip').forEach(chip => {
+    chip.classList.toggle('active', enabledKeys.has(chip.dataset.key));
+  });
+  document.querySelectorAll('#deg-chips .chip').forEach(chip => {
+    chip.classList.toggle('active', enabledDegrees.has(chip.dataset.deg));
+  });
+}
+
+function buildPresets() {
+  const container = document.getElementById('presets-group');
+  PRESETS.forEach(preset => {
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn';
+    btn.textContent = preset.label;
+    btn.addEventListener('click', () => {
+      if (preset.keys)    { enabledKeys    = new Set(preset.keys); }
+      if (preset.degrees) { enabledDegrees = new Set(preset.degrees); }
+      refreshChips();
+      saveSettings();
+      onSettingsChange();
+    });
+    container.appendChild(btn);
+  });
+}
+
+function onSettingsChange() {
+  const warn = document.getElementById('validation-warn');
+  if (!isValid()) {
+    warn.classList.add('visible');
+    document.getElementById('question-text').innerHTML =
+      '<span style="font-size:1rem;color:#666">選択してください</span>';
+    document.getElementById('feedback').textContent = '';
+    document.querySelectorAll('.note-btn').forEach(b => b.disabled = true);
+  } else {
+    warn.classList.remove('visible');
+    newQuestion();
+  }
+}
+
+// Select/deselect all buttons
+document.getElementById('keys-all').addEventListener('click', () => {
+  enabledKeys = new Set(NOTES);
+  refreshChips(); saveSettings(); onSettingsChange();
+});
+document.getElementById('keys-none').addEventListener('click', () => {
+  enabledKeys = new Set();
+  refreshChips(); saveSettings(); onSettingsChange();
+});
+document.getElementById('deg-all').addEventListener('click', () => {
+  enabledDegrees = new Set(DEGREES.map(d => d.label));
+  refreshChips(); saveSettings(); onSettingsChange();
+});
+document.getElementById('deg-none').addEventListener('click', () => {
+  enabledDegrees = new Set();
+  refreshChips(); saveSettings(); onSettingsChange();
+});
+
+// Settings panel open/close
+const settingsPanel = document.getElementById('settings-panel');
+document.getElementById('settings-header').addEventListener('click', () => {
+  settingsPanel.classList.toggle('open');
+});
+document.getElementById('settings-toggle-btn').addEventListener('click', () => {
+  settingsPanel.classList.toggle('open');
+});
+
+// ============================================================
+// Quiz state
+// ============================================================
+let correct = 0;
+let total = 0;
+let streak = 0;
+let currentAnswer = '';
+let currentKey = '';
+let currentKeyIdx = 0;
+let currentSemitones = 0;
+let answered = false;
+
+// ============================================================
+// Audio
+// ============================================================
+let soundEnabled = true;
+let synth = null;
+
+function initSynth() {
+  if (synth) return;
+  synth = new Tone.Synth({
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.005, decay: 0.9, sustain: 0.08, release: 1.4 },
+    volume: -4,
+  }).toDestination();
+}
+
+function toneNote(noteIdx, octave) { return NOTES[noteIdx] + octave; }
+
+function rootOctaveNote() { return toneNote(currentKeyIdx, 4); }
+
+function degreeOctaveNote() {
+  const octave = (currentKeyIdx + currentSemitones >= 12) ? 5 : 4;
+  return toneNote(NOTES.indexOf(currentAnswer), octave);
+}
+
+function chosenOctaveNote(noteStr) {
+  const chosenIdx = NOTES.indexOf(noteStr);
+  let diff = chosenIdx - currentKeyIdx;
+  if (diff < 0) diff += 12;
+  const octave = (currentKeyIdx + diff >= 12) ? 5 : 4;
+  return toneNote(chosenIdx, octave);
+}
+
+async function ensureAudio() { await Tone.start(); initSynth(); }
+
+function scheduleNote(n, offset) {
+  synth.triggerAttackRelease(n, '2n', Tone.now() + offset);
+}
+
+async function playOnQuestion() {
+  if (!soundEnabled) return;
+  await ensureAudio();
+  scheduleNote(rootOctaveNote(), 0);
+}
+
+async function playOnCorrect() {
+  if (!soundEnabled) return;
+  await ensureAudio();
+  scheduleNote(rootOctaveNote(),   0);
+  scheduleNote(degreeOctaveNote(), 0.5);
+}
+
+async function playOnWrong(chosenNote) {
+  if (!soundEnabled) return;
+  await ensureAudio();
+  scheduleNote(chosenOctaveNote(chosenNote), 0);
+  scheduleNote(rootOctaveNote(),             0.4);
+  scheduleNote(degreeOctaveNote(),           0.8);
+}
+
+document.getElementById('sound-toggle').addEventListener('click', () => {
+  soundEnabled = !soundEnabled;
+  const btn = document.getElementById('sound-toggle');
+  btn.textContent = soundEnabled ? '🔊 音' : '🔇 音';
+  btn.classList.toggle('on', soundEnabled);
+});
+
+// ============================================================
+// Quiz logic
+// ============================================================
+function randomItem(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function newQuestion() {
+  if (!isValid()) return;
+  answered = false;
+
+  const activeKeys    = NOTES.filter(n => enabledKeys.has(n));
+  const activeDegrees = DEGREES.filter(d => enabledDegrees.has(d.label));
+
+  const key    = randomItem(activeKeys);
+  const degree = randomItem(activeDegrees);
+
+  currentKey       = key;
+  currentKeyIdx    = NOTES.indexOf(key);
+  currentSemitones = degree.semitones;
+  currentAnswer    = NOTES[(currentKeyIdx + degree.semitones) % 12];
+
+  document.getElementById('question-text').innerHTML =
+    `<span class="key">${key}</span>&nbsp;の&nbsp;<span class="degree">${degree.label} <span class="degree-sub">(${degree.ja})</span></span>`;
+  document.getElementById('feedback').textContent = '';
+  document.getElementById('feedback').className = 'feedback';
+
+  // ボタンをシャッフルして並べ直す（Fisher-Yates）
+  const grid = document.getElementById('buttons-grid');
+  const btns = [...grid.querySelectorAll('.note-btn')];
+  for (let i = btns.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [btns[i], btns[j]] = [btns[j], btns[i]];
+  }
+  btns.forEach(btn => {
+    btn.disabled = false;
+    btn.className = 'note-btn';
+    grid.appendChild(btn);
+  });
+
+  playOnQuestion();
+}
+
+function updateStats() {
+  document.getElementById('streak').textContent = streak;
+  document.getElementById('score').textContent  = `${correct} / ${total}`;
+  document.getElementById('pct').textContent    =
+    total === 0 ? '—' : Math.round(correct / total * 100) + '%';
+}
+
+function handleAnswer(note, btn) {
+  if (answered || !isValid()) return;
+  answered = true;
+  total++;
+
+  document.querySelectorAll('.note-btn').forEach(b => b.disabled = true);
+
+  const fb = document.getElementById('feedback');
+  if (note === currentAnswer) {
+    correct++; streak++;
+    btn.classList.add('correct-ans');
+    fb.textContent = '正解！';
+    fb.className = 'feedback correct';
+    playOnCorrect();
+  } else {
+    streak = 0;
+    btn.classList.add('wrong-ans');
+    document.querySelectorAll('.note-btn').forEach(b => {
+      if (b.dataset.note === currentAnswer) b.classList.add('correct-ans');
+    });
+    fb.textContent = `不正解… 正解は ${currentAnswer}`;
+    fb.className = 'feedback wrong';
+    playOnWrong(note);
+  }
+
+  updateStats();
+  setTimeout(newQuestion, 1200);
+}
+
+function buildButtons() {
+  const grid = document.getElementById('buttons-grid');
+  NOTES.forEach(note => {
+    const btn = document.createElement('button');
+    btn.className = 'note-btn';
+    btn.textContent = note;
+    btn.dataset.note = note;
+    btn.addEventListener('click', () => handleAnswer(note, btn));
+    grid.appendChild(btn);
+  });
+}
+
+// ============================================================
+// Init
+// ============================================================
+loadSettings();
+buildChips();
+buildPresets();
+buildButtons();
+updateStats();
+newQuestion();
+</script>
+</body>
+</html>
