@@ -58,6 +58,7 @@ Claude Codeは `CLAUDE.md` の手順に従って、`qctone init`、`record-di`�
 | `qctone record-di NAME` | Input 1のドライ信号をUSB経由で録音する |
 | `qctone grid` | 現在のグリッドをJSONで表示する |
 | `qctone catalog --search 2203` | ブロックのモデルとパラメータを調べる |
+| `qctone apply '{"ops":[...]}'` | パッチを適用する(録音や解析はしない) |
 | `qctone step NAME --patch p.json` | パッチ適用、リアンプ、解析を1回分まとめて行う |
 | `qctone import NAME bounce.wav` | Logic Proで書き出した音を解析する |
 | `qctone feedback NAME "..."` | 聴いた感想を記録する |

@@ -13,6 +13,9 @@ import numpy as np
 
 VERIFIED_LIBRARY = "0.40.0"
 VERIFIED_COROS = "4.0.1"
+# What the unit reports as app_fw_version on CorOS 4.0.1, per pyquadcortex's readme.
+VERIFIED_FIRMWARE_IDS = {"d14e"}
+ROUTE_USB_5 = """qctone apply '{"ops":[{"op":"set_input","row":0,"port":"USB_5"}]}'"""
 REACHES_OUT_1_2 = {"XLR_1_2", "XLR_1", "XLR_2", "MULTIPLE"}
 
 
@@ -38,14 +41,14 @@ def routing_checks(grid: dict) -> list[Check]:
         return [Check(
             "grid routing", "warn",
             "no row takes its input from USB 5, so a reamp would be silent",
-            'start the first patch with {"op": "set_input", "row": 0, "port": "USB_5"}')]
+            f"{ROUTE_USB_5}  (row 0 = the row your chain starts on)")]
     # A row feeding the next one (NEXT_ROW_*) reaches the jacks through a later row.
     reaching = [r for r in grid["rows"] if r["out_port"] in REACHES_OUT_1_2]
     if not reaching:
         return [Check(
             "grid routing", "warn",
             f"row {usb_rows[0]['row']} takes USB 5, but no row outputs to Out 1/2",
-            '{"op": "set_output", "row": <last row of the chain>, "port": "XLR_1_2"}')]
+            """qctone apply '{"ops":[{"op":"set_output","row":<last row of the chain>,"port":"XLR_1_2"}]}'""")]
     return [Check("grid routing", "ok",
                   f"row {usb_rows[0]['row']} takes USB 5; row {reaching[0]['row']} "
                   f"outputs to {reaching[0]['out_port']}")]
@@ -76,16 +79,24 @@ def _unit() -> tuple[list[Check], dict | None]:
                else "quit Cortex Control, check the USB cable, wait for the unit to boot")
         return [Check("USB control", "fail", str(exc), fix)], None
     firmware = str(getattr(info, "app_fw_version", "?"))
-    checks = [Check("USB control", "ok",
-                    f"connected; firmware {firmware}, {len(grid['blocks'])} blocks on the grid")]
-    if VERIFIED_COROS in firmware:
-        checks.append(Check("firmware", "ok", firmware))
+    checks = [Check("USB control", "ok", "connected"), firmware_check(firmware)]
+    if grid["blocks"]:
+        checks.append(Check("grid", "ok", f"{len(grid['blocks'])} blocks on the grid"))
     else:
         checks.append(Check(
-            "firmware", "warn",
-            f"pyquadcortex is verified on CorOS {VERIFIED_COROS} only; this unit reports "
-            f"{firmware}. If edits do not show on the unit, this is the first suspect."))
+            "grid", "warn", "the grid is empty",
+            "load a starting preset on the unit, or let the loop build a chain from scratch"))
     return checks + routing_checks(grid), grid
+
+
+def firmware_check(firmware: str) -> Check:
+    if firmware in VERIFIED_FIRMWARE_IDS or VERIFIED_COROS in firmware:
+        return Check("firmware", "ok", f"{firmware} (CorOS {VERIFIED_COROS}, verified)")
+    return Check(
+        "firmware", "warn",
+        f"pyquadcortex is verified on CorOS {VERIFIED_COROS} (firmware "
+        f"{'/'.join(sorted(VERIFIED_FIRMWARE_IDS))}) only; this unit reports {firmware}. "
+        f"If edits do not show on the unit, this is the first suspect.")
 
 
 def _audio(reamp_test: bool, routed: bool) -> list[Check]:

@@ -45,9 +45,12 @@ Activate the venv first: `source .venv/bin/activate`.
 
 1. `qctone grid` reads the live grid: blocks, models and every parameter in
    real units, with its range.
-2. Make sure the reamped row's input is `USB_5`. If not, the first patch
-   includes `{"op": "set_input", "row": 0, "port": "USB_5"}`. Point it back at
-   `INPUT_1` before saving if the player wants to play the preset live.
+2. Make sure the reamped row's input is `USB_5`. If not, route it with
+   `qctone apply '{"ops":[{"op":"set_input","row":0,"port":"USB_5"}]}'`
+   (`apply` changes the grid without rendering or creating an iteration). If
+   the grid is empty, build a starting chain the same way, with `set_block`
+   for drive, amp, cab and EQ. Point the input back at `INPUT_1` before
+   saving if the player wants to play the preset live.
 3. Write a patch JSON (format in `qctone/device.py`'s docstring) and run:
 
        qctone step NAME --patch /path/patch.json --note "what and why"

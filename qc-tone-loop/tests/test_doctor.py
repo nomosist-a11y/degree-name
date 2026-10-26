@@ -51,3 +51,22 @@ def test_channel_env_overrides(monkeypatch):
         monkeypatch.delenv("QCTONE_REAMP_OUT")
         monkeypatch.delenv("QCTONE_DRY_IN", raising=False)
         importlib.reload(audio_io)
+
+
+def test_firmware_check_accepts_reported_id():
+    assert doctor.firmware_check("d14e").status == "ok"
+    assert doctor.firmware_check("4.0.1").status == "ok"
+    assert doctor.firmware_check("e20a").status == "warn"
+
+
+def test_load_patch_inline_and_file(tmp_path):
+    from qctone.cli import load_patch
+    inline = '{"ops":[{"op":"set_input","row":0,"port":"USB_5"}]}'
+    assert load_patch(inline)["ops"][0]["port"] == "USB_5"
+    f = tmp_path / "p.json"
+    f.write_text(inline)
+    assert load_patch(str(f)) == load_patch(inline)
+    with pytest.raises(SystemExit, match="could not read"):
+        load_patch("{not json")
+    with pytest.raises(SystemExit, match="could not read"):
+        load_patch(str(tmp_path / "missing.json"))

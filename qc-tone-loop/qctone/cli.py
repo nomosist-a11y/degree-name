@@ -85,8 +85,29 @@ def _run_step(name, patch, note, render=True):
     return it, {**_summary(it, result), "render_level": level}
 
 
+def load_patch(raw: str) -> dict:
+    """A patch given inline as JSON or as a path to a JSON file."""
+    try:
+        if raw.lstrip().startswith("{"):
+            return json.loads(raw)
+        return json.loads(Path(raw).read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"could not read the patch: {exc}") from None
+
+
+def cmd_apply(a):
+    patch = load_patch(a.patch)
+    with device.connect() as qc:
+        ops = device.validate(patch, device.snapshot(qc), qc.catalog)
+        device.apply(qc, ops)
+        time.sleep(1.0)
+        after = device.snapshot(qc)
+    _print({"applied_ops": len(ops), "rows": after["rows"],
+            "note": "the grid is unsaved; recall the preset on the unit to undo"})
+
+
 def cmd_step(a):
-    patch = json.loads(Path(a.patch).read_text()) if a.patch else None
+    patch = load_patch(a.patch) if a.patch else None
     it, summary = _run_step(a.name, patch, a.note or "")
     _print(summary)
 
@@ -190,9 +211,13 @@ def main(argv=None):
     c.add_argument("--category")
     c.set_defaults(fn=cmd_catalog)
 
+    c = sub.add_parser("apply", help="apply a patch to the live grid without rendering")
+    c.add_argument("patch", help="patch JSON inline, or a path to a JSON file")
+    c.set_defaults(fn=cmd_apply)
+
     c = sub.add_parser("step", help="apply a patch, reamp, analyze (one iteration)")
     c.add_argument("name")
-    c.add_argument("--patch", help="patch JSON; omit to just re-render the current grid")
+    c.add_argument("--patch", help="patch JSON (inline or file); omit to just re-render the current grid")
     c.add_argument("--note")
     c.set_defaults(fn=cmd_step)
 
