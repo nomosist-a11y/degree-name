@@ -1,0 +1,28 @@
+[project]
+name = "qctone"
+version = "0.1.0"
+description = "Quad Cortex tone-matching loop: target -> edit grid over USB -> reamp -> analyze -> repeat"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "soundfile>=0.12",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+device = [
+    "pyquadcortex==0.40.0",
+    "sounddevice>=0.4.6",
+]
+dev = ["pytest>=8"]
+
+[project.scripts]
+qctone = "qctone.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["qctone"]

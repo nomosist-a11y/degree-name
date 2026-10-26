@@ -1,0 +1,98 @@
+# Quad Cortex tone loop - instructions for Claude Code
+
+You are running the tone-matching loop on the player's Mac, which has a Quad
+Cortex connected over USB. You cannot hear audio. You judge every tone from
+`compare.json`, `features.json` and the `compare.png` plot, together with what
+the player tells you they hear.
+
+Activate the venv first: `source .venv/bin/activate`.
+
+## Before you start
+
+1. **Cortex Control must be closed.** It holds the USB control link
+   exclusively. If it's open, `qctone` fails with "Quad Cortex not found".
+   Ask the player to quit it. They can reopen it after the session to see the
+   result.
+2. The player loads a starting preset on the unit, either one close to the
+   target or a simple amp > cab chain. Edits are never saved unless you run
+   `qctone save`, so the stored preset stays safe until then.
+3. The DI. Use `qctone init ... --di file.wav` with an existing dry recording,
+   or run `qctone record-di NAME --seconds 20` while the player plays into
+   Input 1. The DI should be the same part, in the same register, as the
+   reference.
+
+## Defining the target
+
+    qctone init NAME --ref reference.wav --start 30 --dur 15 --desc "..."
+
+- The reference should be **isolated guitar** if at all possible (a stem, an
+  isolated track, or a section with no bass or drums). With a full mix, the
+  bass and cymbals distort the low and high bands, so discount `sub`, `low` and
+  `air` and say so to the player.
+- `--desc` holds the player's words (for example "tight, mid-forward, not
+  fizzy, 2000s metalcore rhythm"). Reread `target/description.md` on every
+  iteration. Where the words and the numbers disagree, **the words win**.
+
+## The loop
+
+1. `qctone grid` reads the live grid: blocks, models and every parameter in
+   real units, with its range.
+2. Make sure the reamped row's input is `USB_5`. If not, the first patch
+   includes `{"op": "set_input", "row": 0, "port": "USB_5"}`. Point it back at
+   `INPUT_1` before saving if the player wants to play the preset live.
+3. Write a patch JSON (format in `qctone/device.py`'s docstring) and run:
+
+       qctone step NAME --patch /path/patch.json --note "what and why"
+
+   This validates the patch (nothing is sent if any op is invalid), applies
+   it, reamps the DI, analyzes the result, and prints the score and hints.
+   Write patch files into the session folder or your scratchpad.
+4. Look at `iter_NNN/compare.png` (Read the image) and `compare.json`. Plan
+   the next patch from `mismatch_regions` and `hints`:
+   - Fix structure first, then gain, then broad EQ, then fine EQ, then
+     ambience. Choose amp, drive and cab/mic (`qctone catalog --category amp`,
+     `--search`) before chasing small EQ moves.
+   - Change **one idea per iteration**, at most 2-4 related knobs, so each
+     result can be attributed.
+   - `flatness_1k_5k` too high or crest too low means too much gain or
+     compression. The reverse means too little.
+   - Broad tilt usually comes from TREBLE/PRESENCE or cab/mic choice. Narrow
+     peaks come from an EQ block. Add a Parametric EQ after the cab if none
+     exists.
+   - Keep the output level sensible. If `render_level.clipped` is true, lower
+     the amp or lane level before anything else.
+5. At about score 85+, or every 3-4 iterations, ask the player to listen (on
+   the unit or by reamping in Logic Pro) and record their reaction with
+   `qctone feedback NAME "too much low end on palm mutes"`. Their ears beat
+   the score.
+6. If an iteration made things worse, `qctone restore NAME --iter N` puts the
+   grid back to iteration N, and `qctone restore NAME` puts it back to the
+   baseline.
+7. Stop when the player is happy, or when 3 iterations in a row fail to raise
+   the best score. In that case, propose a structural change (different
+   amp/cab) or ask the player for direction.
+8. Save only on the player's explicit go-ahead:
+   `qctone save NAME --slot 30A --title "..."` (this overwrites that User
+   slot, so confirm the slot is free or unwanted).
+
+## Logic Pro route (optional)
+
+If the player prefers to reamp in Logic Pro, or bounces a mix there, analyze
+that file instead:
+
+    qctone grid --out /path/grid.json
+    qctone import NAME bounced.wav --grid /path/grid.json --note "Logic bounce"
+
+## Report each iteration to the player in one short block
+
+Give the score (with the best so far), what you changed, what you'll change
+next and why, and whether you want them to listen.
+
+## Library caveats (pyquadcortex, unofficial)
+
+- Verified on CorOS 4.0.1 only. If writes stop landing after a firmware
+  update, say so rather than retrying blindly.
+- A `set_block` the preset lacks DSP for is refused (`BlockRefused`). Use a
+  lighter block, or remove one.
+- Never call anything that changes global I/O settings. This tool only edits
+  the grid.
