@@ -16,7 +16,15 @@ Activate the venv first: `source .venv/bin/activate`.
 2. The player loads a starting preset on the unit, either one close to the
    target or a simple amp > cab chain. Edits are never saved unless you run
    `qctone save`, so the stored preset stays safe until then.
-3. The DI. Use `qctone init ... --di file.wav` with an existing dry recording,
+3. Run `qctone doctor --reamp-test`. It checks the USB control link, the
+   firmware, the grid routing (is a row fed from USB 5 and reaching Out 1/2?),
+   the USB audio device, and plays a short test note through the grid. Fix
+   every FAIL before going on. The test note plays at -20 dBFS into the amp,
+   so warn the player to turn monitors down first. If the reamp test is
+   silent, the unit's USB channel map differs from the default. Set
+   `QCTONE_REAMP_OUT` / `QCTONE_WET_IN` / `QCTONE_DRY_IN` (1-based channel
+   numbers) and rerun.
+4. The DI. Use `qctone init ... --di file.wav` with an existing dry recording,
    or run `qctone record-di NAME --seconds 20` while the player plays into
    Input 1. The DI should be the same part, in the same register, as the
    reference.

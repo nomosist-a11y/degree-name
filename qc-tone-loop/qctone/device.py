@@ -54,9 +54,11 @@ def connect():
     try:
         qc = pq.connect()
     except pq.DeviceNotFoundError as exc:
+        raise SystemExit(f"Quad Cortex not reachable over USB: {exc}") from exc
+    except TimeoutError as exc:
         raise SystemExit(
-            "Quad Cortex not found over USB. Quit Cortex Control (it holds the "
-            "device exclusively), check the cable, and try again."
+            f"the Quad Cortex is connected but did not answer: {exc}. If it just "
+            "booted, wait 30 s and retry; otherwise power-cycle it."
         ) from exc
     try:
         yield qc

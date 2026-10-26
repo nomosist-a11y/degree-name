@@ -37,6 +37,8 @@ def cmd_init(a):
 
 def cmd_record_di(a):
     from qctone import audio_io
+    if not session.path(a.name).exists():
+        raise SystemExit(f"no session {a.name!r}: run `qctone init` first")
     out = session.path(a.name) / "di.wav"
     print(f"recording {a.seconds}s of dry Input 1 - play now", file=sys.stderr)
     _print({"di": str(out), **audio_io.record_dry(out, a.seconds)})
@@ -137,6 +139,18 @@ def cmd_status(a):
         print(f"best: {b[1].name} score {b[0]}")
 
 
+def cmd_doctor(a):
+    from qctone import doctor
+    marks = {"ok": "OK  ", "warn": "WARN", "fail": "FAIL"}
+    checks = doctor.run(a.reamp_test)
+    for c in checks:
+        print(f"[{marks[c.status]}] {c.name}: {c.detail}")
+        if c.fix:
+            print(f"       fix: {c.fix}")
+    if any(c.status == "fail" for c in checks):
+        raise SystemExit(1)
+
+
 def cmd_analyze(a):
     _print(features.analyze(a.wav, a.start, a.dur))
 
@@ -158,6 +172,11 @@ def main(argv=None):
     c.add_argument("name")
     c.add_argument("--seconds", type=float, default=20.0)
     c.set_defaults(fn=cmd_record_di)
+
+    c = sub.add_parser("doctor", help="check USB control, routing and audio before a session")
+    c.add_argument("--reamp-test", action="store_true",
+                   help="also play a short test note through the grid and check it comes back")
+    c.set_defaults(fn=cmd_doctor)
 
     c = sub.add_parser("devices", help="list audio devices")
     c.set_defaults(fn=cmd_devices)
