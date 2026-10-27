@@ -134,6 +134,18 @@ class Plan:
         return "\n".join(lines)
 
 
+def sandbox_target(device) -> tuple[str, list[Step], dict]:
+    """The sandbox as a plan's destination, without creating anything now.
+
+    Returns ``(key, steps, occupied)``: when the sandbox does not exist yet, the
+    first step creates it (so a dry run sends nothing) and ``occupied`` is empty.
+    """
+    key = guard.folder_key(guard.SANDBOX_NAME)
+    if key in {f["key"] for f in device.setlists()}:
+        return key, [], {p["index"]: p["name"] for p in device.presets(key)}
+    return key, [Step("create_folder", key, note="sandbox を作ります")], {}
+
+
 def plans_dir(mock: bool) -> Path:
     return paths.sub("plans", mock)
 
@@ -145,7 +157,7 @@ def save_plan(plan: Plan, mock: bool) -> Path:
 
 
 def load_plan(plan_id: str, mock: bool) -> Plan:
-    path = plans_dir(mock) / plan_id / "plan.json"
+    path = paths.child(plans_dir(mock), plan_id) / "plan.json"
     if not path.exists():
         raise PlanError(f"計画 {plan_id} が見つかりません。")
     return Plan.from_dict(json.loads(path.read_text()))
@@ -183,20 +195,25 @@ def _backup(plan: Plan, device, folder: Path) -> list[str]:
         path.write_text(json.dumps(listing, ensure_ascii=False, indent=2) + "\n")
         written.append(str(path))
     catalog = device.catalog
+    existing = {f["key"] for f in device.setlists()}
     for s in plan.steps:
-        target = None
+        targets = []
         if s.action in ("delete", "move"):
-            target = next((p for p in device.presets(s.folder) if p["name"] == s.name), None)
+            targets = [p for p in device.presets(s.folder) if p["name"] == s.name][:1]
+        elif s.action == "delete_folder":
+            # Everything the folder holds goes with it, so every preset is kept.
+            key = guard.folder_key(s.folder)
+            targets = device.presets(key) if key in existing else []
         elif s.overwrites:
-            target = next((p for p in device.presets(s.folder) if p["index"] == s.position), None)
-        if target is None:
-            continue
-        stored = device.read_stored(s.folder, target["index"])
-        n = presets.normalize(stored, catalog, folder=s.folder, position=target["index"])
-        path = folder / f"{safe_name(guard.folder_name(s.folder))}_{target['slot']}_" \
-                        f"{safe_name(target['name'])}.json"
-        path.write_text(json.dumps(n, ensure_ascii=False, indent=2) + "\n")
-        written.append(str(path))
+            targets = [p for p in device.presets(s.folder) if p["index"] == s.position][:1]
+        key = guard.folder_key(s.folder)
+        for target in targets:
+            stored = device.read_stored(key, target["index"])
+            n = presets.normalize(stored, catalog, folder=key, position=target["index"])
+            path = folder / f"{safe_name(guard.folder_name(key))}_{target['slot']}_" \
+                            f"{safe_name(target['name'])}.json"
+            path.write_text(json.dumps(n, ensure_ascii=False, indent=2) + "\n")
+            written.append(str(path))
     return written
 
 
@@ -235,8 +252,9 @@ def _run_step(step: Step, device, rebuild=None):
     if step.action == "rebuild":
         if rebuild is None:
             from qcsuite.rebuild import rebuild_grid as rebuild
-        rebuild(device, step.payload)
-        return device.save_current(step.folder, step.position, step.name, step=step)
+        with device._lock:              # nothing else may touch the grid in between
+            rebuild(device, step.payload)
+            return device.save_current(step.folder, step.position, step.name, step=step)
     if step.action == "delete":
         return device.delete_preset(step.folder, step.name, step=step)
     if step.action == "move":

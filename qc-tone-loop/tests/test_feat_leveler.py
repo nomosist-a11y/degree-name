@@ -118,14 +118,15 @@ def test_apply_to_sandbox_copies_then_verify(rig, device, fake, short_di):
     proposal = leveler.propose(rows, target=-18.0)
     plan = leveler.build_plan(device, proposal, di=short_di, measure_job=job_id)
     sandbox = f"{USER}/_qcsuite_sandbox"
-    assert plan_mod.execute(plan, device)["dry_run"] and not fake.folders[sandbox]
+    copies = [s for s in plan.steps if s.action == "copy"]
+    assert plan_mod.execute(plan, device)["dry_run"] and sandbox not in fake.folders
     leveler.execute(plan, device, confirm=True)
-    assert len(fake.folders[sandbox]) == len(plan.steps)
+    assert len(fake.folders[sandbox]) == len(copies)
     session = leveler.load_session(plan.id, True)
     vjob = leveler.start_verify(session, mock=True)
     jobs.run(vjob, leveler.measure_work(rig, vjob))
     summary = leveler.verify_summary(vjob.id, True)
-    assert summary["count"] == len(plan.steps)
+    assert summary["count"] == len(copies)
     assert summary["within_goal"] == summary["count"], summary
     after = {p["position"]: presets.normalize(device.read_stored(p["folder"], p["position"]),
                                               device.catalog)["fingerprint"] for p in PRESETS}
@@ -173,16 +174,17 @@ def test_gain_block_levels_where_lanes_are_inert(short_di):
         job_id, rows = _measure(rig, short_di)
         proposal = leveler.propose(rows, target=-18.0, method="gain_block")
         plan = leveler.build_plan(device, proposal, measure_job=job_id)
-        assert all(s.adjust.get("gain_block") for s in plan.steps)
+        copies = [s for s in plan.steps if s.action == "copy"]
+        assert all(s.adjust.get("gain_block") for s in copies)
         # The shared plan runner understands gain blocks (Device.apply_adjust).
         plan_mod.execute(plan, device, confirm=True)
-        copy = presets.normalize(device.read_stored(plan.steps[0].folder, plan.steps[0].position),
+        copy = presets.normalize(device.read_stored(copies[0].folder, copies[0].position),
                                  device.catalog)
         assert any(b["model_id"] == leveler.GAIN_BLOCK_ID for b in copy["blocks"])
         vjob = leveler.start_verify(leveler.load_session(plan.id, True), mock=True)
         jobs.run(vjob, leveler.measure_work(rig, vjob))
         summary = leveler.verify_summary(vjob.id, True)
-        assert summary["within_goal"] == summary["count"] == len(plan.steps), summary
+        assert summary["within_goal"] == summary["count"] == len(copies), summary
 
 
 def test_cli_flow(capsys, short_di):

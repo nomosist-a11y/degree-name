@@ -471,15 +471,21 @@ def save_plan(device, name: str, folder: str | None = None) -> plan_mod.Plan:
     """A one-step plan: save the live grid into a free slot of the sandbox (default)."""
     if not name.strip():
         raise PanelError("保存する名前を入れてください。")
-    key = device.ensure_sandbox() if folder is None else guard.folder_key(folder)
+    if folder is None:
+        key, first, occupied = plan_mod.sandbox_target(device)   # nothing is created yet
+    else:
+        key, first = guard.folder_key(folder), []
+        occupied = {p["index"]: p["name"] for p in device.presets(key)}
     device.policy.check(key, "保存")
-    position = device.free_position(key)
+    position = next((i for i in range(256) if i not in occupied), None)
+    if position is None:
+        raise PanelError(f"「{guard.folder_name(key)}」に空きスロットがありません。")
     warnings = ["タグは保存されません(本体の仕様)。同じ名前があると本体が名前を変えます(20 文字 + _N)。"]
     usb = [r["row"] + 1 for r in device.grid()["rows"] if r["in_port"].startswith("USB")]
     if usb:
         warnings.append(f"行 {', '.join(map(str, usb))} の入力が USB のままです。ギターで弾くプリセットに"
                         "するなら、保存前に入力を INPUT_1 に戻してください。")
-    return plan_mod.Plan(f"言葉で操作した結果を保存: {name}", steps=[plan_mod.Step(
+    return plan_mod.Plan(f"言葉で操作した結果を保存: {name}", steps=first + [plan_mod.Step(
         "save", key, position=position, name=name.strip(),
         note="現在のグリッドを保存")], warnings=warnings)
 

@@ -154,7 +154,8 @@ def test_to_sandbox_plans_both_ways(device, fake, watching):
     session = watch.open_session(w.stop()["id"], True)
     final = session.snapshot(1, "final")
     plan = watch.to_sandbox_plan(device, session)
-    assert plan.steps[0].action == "rebuild" and "組み立て" in plan.render()
+    assert [s.action for s in plan.steps] == ["create_folder", "rebuild"]
+    assert "組み立て" in plan.render()
     result = watch.execute_plan(plan, device, confirm=False)
     assert result["dry_run"]
     key = device.ensure_sandbox()

@@ -262,7 +262,8 @@ def test_save_is_a_sandbox_plan(device, fake):
     from qcsuite import plan as plan_mod
     setup_grid(device, "GAIN")
     p = panel.save_plan(device, "Panel result")
-    (step,) = p.steps
+    create, step = p.steps                       # the plan creates the sandbox itself
+    assert create.action == "create_folder"
     assert step.action == "save" and step.folder.endswith("_qcsuite_sandbox")
     assert plan_mod.execute(p, device)["dry_run"]
     plan_mod.execute(p, device, confirm=True)
@@ -395,7 +396,7 @@ def test_web_flow(client):
     assert client.post("/api/panel/ab/capture", json={"slot": "B"}).status_code == 200
     assert client.post("/api/panel/undo").json()["instruction"] == "少し暗く"
     plan = client.post("/api/panel/save", json={"name": "web result"}).json()
-    assert not plan["refused"] and plan["steps"][0]["action"] == "save"
+    assert not plan["refused"] and plan["steps"][-1]["action"] == "save"
     job = client.post(f"/api/plans/{plan['id']}/execute", json={"confirm": "実行"}).json()["job"]
     assert wait_job(client, job)["summary"]["status"] == "done"
     assert "panel.js" in client.get("/static/panel.html").text

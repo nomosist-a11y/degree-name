@@ -521,14 +521,18 @@ def build_plan(device, proposal: dict, *, to: str | None = None, di: str | None 
     method = proposal.get("method", "lane")
     if di is None and measure_job is not None:
         di = jobs.open_job(measure_job, device.mock).spec.get("di")
-    key = guard.folder_key(to) if to else device.ensure_sandbox()
+    if to:
+        key, steps = guard.folder_key(to), []
+        taken = {p["index"] for p in device.presets(key)}
+    else:
+        key, steps, occupied = plan_mod.sandbox_target(device)   # created by the plan
+        taken = set(occupied)
     device.policy.check(key, "音量をそろえたコピーの保存")
     gain_model = gain_spec = None
     if method == "gain_block":
         gain_model, gain_spec = _gain_model(device)
-    taken = {p["index"] for p in device.presets(key)}
     free = (i for i in range(256) if i not in taken)
-    steps, entries = [], []
+    entries = []
     for r in proposal["rows"]:
         if r["delta_db"] is None or not (r["lanes"] or r["gain_blocks"] or r["knobs"]):
             continue
@@ -554,7 +558,7 @@ def build_plan(device, proposal: dict, *, to: str | None = None, di: str | None 
         entries.append({"source": {"folder": r["folder"], "position": r["position"]},
                         "dest": {"folder": key, "position": position}, "name": r["name"],
                         "measured_lufs": r["lufs"], "delta_db": r["delta_db"]})
-    if not steps:
+    if not entries:
         raise ValueError("補正できるプリセットがありません。")
     warnings = ["元のプリセットは変更しません。コピー先にだけ補正を書き込みます。",
                 "コピーではタグが引き継がれず、同じ名前があると本体が名前を変えることがあります。"]
@@ -576,7 +580,7 @@ def load_session(plan_id: str | None, mock: bool) -> dict:
         if not files:
             raise FileNotFoundError("適用した音量そろえの記録がありません(先に level apply)。")
         return json.loads(files[-1].read_text())
-    path = sessions_dir(mock) / f"{plan_id}.json"
+    path = paths.child(sessions_dir(mock), f"{plan_id}.json")
     if not path.exists():
         raise FileNotFoundError(f"音量そろえの記録 {plan_id} がありません。")
     return json.loads(path.read_text())

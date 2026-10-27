@@ -26,6 +26,7 @@ go through :mod:`qcsuite.plan` (plan, confirm, back up, run, read back).
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 from dataclasses import dataclass, field
 
@@ -69,7 +70,8 @@ def folder_key(name_or_key: str) -> str:
     dropped, since the device lists the factory folder without one.
     """
     if "/" in name_or_key:
-        return name_or_key.rstrip("/")
+        # Normalized, so "kami/." or "Favorite/sub/.." cannot dodge the checks.
+        return posixpath.normpath(name_or_key.rstrip("/") or "/")
     if _LIBRARY_KEY.match(name_or_key):
         return name_or_key
     if name_or_key.strip() == "Factory Library":
@@ -81,8 +83,51 @@ def folder_name(key: str) -> str:
     return key.rstrip("/").rsplit("/", 1)[-1]
 
 
+def _fold(name: str) -> str:
+    return name.strip().casefold()
+
+
+def _named(name: str, names) -> bool:
+    """Whether ``name`` is one of ``names``, ignoring case and outer spaces."""
+    return _fold(name) in {_fold(n) for n in names}
+
+
 def is_user_folder(key: str) -> bool:
-    return key.startswith(USER_ROOT + "/")
+    """Exactly ``USER_ROOT/<one plain name>``: nothing nested, no odd names."""
+    if not key.startswith(USER_ROOT + "/"):
+        return False
+    name = key[len(USER_ROOT) + 1:]
+    return bool(name) and "/" not in name and name == name.strip() and name not in (".", "..") \
+        and not any(ord(c) < 32 for c in name)
+
+
+_BAD_NAME = re.compile(r"[/\\\x00-\x1f\x7f]")
+
+
+def check_preset_name(name: str):
+    """Refuse preset names that could address a file other than a preset's own.
+
+    The unit names preset files ``<setlist>/<name>.pb`` (delete and move address
+    them that way), so a slash or ``..`` in a name is never sent.
+    """
+    if not isinstance(name, str) or not name.strip():
+        raise WriteRefused("プリセットの名前が空です。")
+    if _BAD_NAME.search(name) or name.strip() in (".", "..") or ".." in name.split("/"):
+        raise WriteRefused(f"プリセットの名前に使えない文字があります(/ \\ 制御文字): {name!r}")
+    if len(name) > 64:
+        raise WriteRefused(f"プリセットの名前が長すぎます({len(name)} 文字): {name!r}")
+
+
+def name_matches(requested: str, stored: str) -> bool:
+    """Whether ``stored`` is ``requested`` as the unit would store it.
+
+    Measured (pyquadcortex ``save_current_preset``): a colliding name is cut so
+    that ``base + "_N"`` fits 20 characters.
+    """
+    if stored == requested:
+        return True
+    m = re.fullmatch(r"(.*)_(\d+)", stored or "")
+    return bool(m) and len(stored) <= 20 and requested.startswith(m.group(1))
 
 
 def is_sandbox(key: str) -> bool:
@@ -116,8 +161,9 @@ class WritePolicy:
         key = folder_key(name_or_key)
         name = folder_name(key)
         if not is_user_folder(key):
-            raise WriteRefused(f"{name} は工場出荷やライブラリのフォルダなので書き込めません。")
-        if name in PROTECTED:
+            raise WriteRefused(f"{name} は工場出荷やライブラリのフォルダ、または正しくないフォルダ名なので"
+                               "書き込めません。")
+        if _named(name, PROTECTED):
             raise WriteRefused(
                 f"「{name}」は保護フォルダです。qcsuite からの書き込みは許可できません"
                 "(解禁するかどうかは保留事項です)。")
@@ -139,12 +185,12 @@ class WritePolicy:
         if self.readonly:
             raise WriteRefused(f"QCSUITE_READONLY が設定されているため、{action} を拒否しました。")
         if key.startswith(FACTORY_ROOT) or not is_user_folder(key):
-            raise WriteRefused(f"「{name}」は読み取り専用です({action} を拒否)。")
+            raise WriteRefused(f"「{name}」は読み取り専用、または正しくないフォルダ名です({action} を拒否)。")
+        if _named(name, PROTECTED):
+            raise WriteRefused(f"「{name}」は保護フォルダです({action} を拒否)。")
         if is_sandbox(key) or key in self.allowed:
             return
-        if name in PROTECTED:
-            raise WriteRefused(f"「{name}」は保護フォルダです({action} を拒否)。")
-        if name in OPT_IN:
+        if _named(name, OPT_IN):
             raise WriteRefused(
                 f"「{name}」への {action} は、明示的に許可したときだけ行えます"
                 f"(CLI: --allow-folder {name})。")
@@ -152,12 +198,18 @@ class WritePolicy:
             f"「{name}」は許可リストにないため {action} を拒否しました。"
             f"書き込み先は sandbox({SANDBOX_NAME})が既定です。")
 
+    def check_grid(self, action: str):
+        """Live-grid edits (unsaved) are allowed unless QCSUITE_READONLY is set."""
+        if self.readonly:
+            raise WriteRefused(f"QCSUITE_READONLY が設定されているため、{action} を拒否しました"
+                               "(グリッドの編集も行いません)。")
+
     def check_create_folder(self, name: str, existing: set[str]):
         """Folders may be created only when new, and only sandbox-named or allowed."""
         key = folder_key(name)
         if key in existing:
             raise WriteRefused(f"フォルダ「{name}」はすでにあります。")
-        if folder_name(key) in PROTECTED:
+        if _named(folder_name(key), PROTECTED):
             raise WriteRefused(f"「{name}」は保護フォルダの名前です。")
         self.check(key, "フォルダ作成")
 

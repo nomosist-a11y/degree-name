@@ -66,7 +66,7 @@ def root(mock: bool) -> Path:
 
 
 def _dir(tid: str, mock: bool) -> Path:
-    folder = root(mock) / tid
+    folder = paths.child(root(mock), tid)
     if not (folder / "tournament.json").exists():
         raise FileNotFoundError(f"比較 {tid} が見つかりません。")
     return folder

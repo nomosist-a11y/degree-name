@@ -177,7 +177,7 @@ def open_session(session_id: str, mock: bool) -> Session:
         if not found:
             raise QcsuiteError("記録(ウォッチのセッション)がまだありません。")
         return found[0]
-    folder = watch_dir(mock) / session_id
+    folder = paths.child(watch_dir(mock), session_id)
     if not (folder / "session.json").exists():
         raise QcsuiteError(f"セッション {session_id} が見つかりません(qcsuite watch list で確認)。")
     return Session(folder)
@@ -403,10 +403,17 @@ def to_sandbox_plan(device, s: Session, *, segment: int | None = None, source: d
     """A one-step plan saving the segment's final state into the sandbox."""
     seg = _segment(s, segment)
     final = s.snapshot(seg, "final")
-    key = device.ensure_sandbox() if folder is None else guard.folder_key(folder)
-    position = pq.slot_to_position(slot) if slot else device.free_position(key)
-    occupied = {p["index"]: p["name"] for p in device.presets(key)} \
-        if key in {f["key"] for f in device.setlists()} else {}
+    if folder is None:
+        key, first, occupied = plan_mod.sandbox_target(device)   # created by the plan
+    else:
+        key, first = guard.folder_key(folder), []
+        occupied = {p["index"]: p["name"] for p in device.presets(key)}
+    if slot:
+        position = pq.slot_to_position(slot)
+    else:
+        position = next((i for i in range(256) if i not in occupied), None)
+        if position is None:
+            raise QcsuiteError(f"「{guard.folder_name(key)}」に空きスロットがありません。")
     payload = dict(final)
     warnings = []
     if source is not None:
@@ -425,7 +432,8 @@ def to_sandbox_plan(device, s: Session, *, segment: int | None = None, source: d
                          overwrites=occupied.get(position), payload=payload,
                          note=f"編集の記録 {s.id} 区間 {seg}"
                               + ("(元のプリセット + 変更の再現)" if source else "(JSON から組み立て)"))
-    return plan_mod.Plan(f"編集の記録を sandbox に保存({s.id})", steps=[step], warnings=warnings)
+    return plan_mod.Plan(f"編集の記録を sandbox に保存({s.id})", steps=first + [step],
+                         warnings=warnings)
 
 
 def rebuild_for_watch(device, payload: dict):

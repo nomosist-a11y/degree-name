@@ -117,7 +117,7 @@ def jobs_dir(mock: bool) -> Path:
 def create(kind: str, spec: dict, items: list, mock: bool, job_id: str | None = None,
            title: str = "") -> Job:
     job_id = job_id or f"{time.strftime('%Y%m%d-%H%M%S')}-{kind}-{uuid.uuid4().hex[:4]}"
-    folder = jobs_dir(mock) / job_id
+    folder = paths.child(jobs_dir(mock), job_id)
     if folder.exists():
         raise FileExistsError(f"ジョブ {job_id} はすでにあります(再開は --resume {job_id})")
     folder.mkdir(parents=True)
@@ -132,7 +132,7 @@ def create(kind: str, spec: dict, items: list, mock: bool, job_id: str | None = 
 
 
 def open_job(job_id: str, mock: bool) -> Job:
-    folder = jobs_dir(mock) / job_id
+    folder = paths.child(jobs_dir(mock), job_id)
     if not (folder / "spec.json").exists():
         raise FileNotFoundError(f"ジョブ {job_id} が見つかりません")
     return Job(folder)

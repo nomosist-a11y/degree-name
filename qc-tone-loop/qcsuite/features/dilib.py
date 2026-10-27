@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sys
 
-from qcsuite.audio import di
+from qcsuite.audio import di, export
 
 
 def record(rig, name: str, seconds: float, note: str = "") -> dict:
@@ -20,7 +20,7 @@ def record(rig, name: str, seconds: float, note: str = "") -> dict:
                        note=note or "モックの録音(合成 DI)")
     from qctone import audio_io
     from qctone.features import load
-    tmp = di.library_dir(False) / f".recording-{name}.wav"
+    tmp = di.library_dir(False) / f".recording-{export.safe_name(name)}.wav"
     audio_io.record_dry(tmp, seconds)
     data, sr = load(tmp)
     tmp.unlink()

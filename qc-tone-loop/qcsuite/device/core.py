@@ -213,6 +213,7 @@ class Device:
         reports as refused are checked against the grid (see module docstring).
         Returns the applied ops and any notices about writes that will not sound.
         """
+        self.policy.check_grid("グリッドの編集")
         with self._lock:
             grid = self.grid()
             catalog = self.catalog
@@ -259,6 +260,7 @@ class Device:
 
     def place_block(self, row: int, col: int, model_id: int) -> dict:
         """``set_block``, believing a refusal only if the grid agrees."""
+        self.policy.check_grid("ブロックの配置")
         with self._lock:
             try:
                 self.qc.set_block(row, col, model_id)
@@ -281,6 +283,7 @@ class Device:
         placing a new one.
         """
         entry = type("CaptureEntry", (), {"key": capture["key"], "name": capture["name"]})
+        self.policy.check_grid("キャプチャーの書き込み")
         with self._lock:
             if model is not None:
                 self.place_block(row, col, model)
@@ -294,10 +297,12 @@ class Device:
     def set_text(self, row: int, col: int, param_index: int, text: str):
         """Write a string parameter (mic, IR, capture reference). Reads back; does
         not change the sound when written from the computer."""
+        self.policy.check_grid("文字列パラメーターの書き込み")
         with self._lock:
             self.qc.set_param(row, col, param_index=param_index, text=text)
 
     def set_scene_label(self, scene: int, label: str):
+        self.policy.check_grid("シーン名の書き込み")
         with self._lock:
             self.qc.set_scene_label(scene, label or None)
 
@@ -308,6 +313,7 @@ class Device:
 
     def set_lane_volume_db(self, row: int, db: float):
         """Row output VOLUME in dB (-40..+12). Edits the live grid only."""
+        self.policy.check_grid("行の出力レベルの書き込み")
         with self._lock:
             self.qc.set_lane_output(row, "VOLUME", value=pq.db_to_lane_level(db))
 
@@ -317,11 +323,13 @@ class Device:
         MUTE is 1.0 = muted (pyquadcortex ``set_lane_output``). Edits the live
         grid only.
         """
+        self.policy.check_grid("行の出力の書き込み")
         with self._lock:
             self.qc.set_lane_output(row, name, value=float(value))
 
     def set_gate_param(self, row: int, name: str, value: float):
         """A row input gate parameter (NOISE REDUCTION, BYPASS, INPUT GAIN), 0..1."""
+        self.policy.check_grid("ゲートの書き込み")
         with self._lock:
             self.qc.set_input_gate(row, name, value=float(value))
 
@@ -397,23 +405,54 @@ class Device:
             self.policy.check_delete_folder(name)
             return self.qc.delete_setlist(guard.folder_name(guard.folder_key(name)))
 
-    def save_current(self, key: str, position: int, name: str, *, step=None,
-                     instrument: int = 1) -> str | None:
-        """Save the live grid into ``key``/``position``. Returns the stored name.
-
-        An occupied slot is an overwrite, which only a plan step may do.
-        """
-        with self._lock:
-            self.policy.check(key, "保存")
-            occupied = {p["index"]: p["name"] for p in self.presets(key)}
-            if position in occupied and step is None:
+    def _check_overwrite(self, key: str, position: int, step) -> dict:
+        """An occupied slot may only be written by a plan step that names its
+        current occupant (and so was planned, labelled and backed up as an
+        overwrite). Returns the folder's slot -> name map."""
+        occupied = {p["index"]: p["name"] for p in self.presets(key)}
+        if position in occupied:
+            planned = getattr(step, "overwrites", None)
+            if step is None or planned != occupied[position]:
                 raise PlanError(
                     f"{pq.position_to_slot(position)} には「{occupied[position]}」があります。"
-                    "上書きは計画(plan)経由でのみ実行できます。")
+                    + ("上書きは計画(plan)経由でのみ実行できます。" if step is None else
+                       f"計画を作ったときは「{planned or '空き'}」だったため、上書きせずに止めました"
+                       "(計画を作り直してください)。"))
+        return occupied
+
+    def save_current(self, key: str, position: int, name: str, *, step=None,
+                     instrument: int = 1) -> str:
+        """Save the live grid into ``key``/``position``. Returns the stored name.
+
+        An occupied slot is an overwrite, which only a plan step naming the
+        occupant may do. The slot is read back: the stored name must be the
+        requested one, or the unit's de-duplicated form of it (base cut to fit
+        20 characters, ``_N`` appended); anything else means the save did not
+        land, and raises.
+        """
+        guard.check_preset_name(name)
+        with self._lock:
+            self.policy.check(key, "保存")
+            self._check_overwrite(key, position, step)
             stored = self.qc.save_current_preset(key, position, name, instrument=instrument,
                                                  confirm=True)
+            if stored is None or not guard.name_matches(name, stored):
+                # The library's own confirmation accepts any name in the slot, so on
+                # an overwrite a stale listing still showing the old preset passes
+                # it. Listings are eventually consistent: wait for the new name.
+                try:
+                    entries = self.wait_for_listing(
+                        key, until=lambda es: any(e.index == position and guard.name_matches(name, e.name)
+                                                  for e in es),
+                        timeout=30.0 if not self.mock else 1.0)
+                    stored = next(e.name for e in entries if e.index == position)
+                except TimeoutError:
+                    pass
         if stored is None:
             raise VerifyFailed(f"{pq.position_to_slot(position)} への保存が一覧で確認できません。")
+        if not guard.name_matches(name, stored):
+            raise VerifyFailed(f"{pq.position_to_slot(position)} を読み戻すと「{stored}」でした"
+                               f"(保存した「{name}」ではありません)。保存が届かなかった可能性があります。")
         if stored != name:
             self.notice(INFO, f"同じ名前があったため、本体が「{name}」を「{stored}」として保存しました。")
         return stored
@@ -426,13 +465,13 @@ class Device:
         ``adjust`` edits the recalled grid before it is saved (see
         :meth:`apply_adjust`). The source preset itself is never written.
         """
+        if name is not None:
+            guard.check_preset_name(name)
         with self._lock:
             self.policy.check(dst_key, "コピー")
             if to_position is None:
                 to_position = self.free_position(dst_key)
-            occupied = {p["index"] for p in self.presets(dst_key)}
-            if to_position in occupied and step is None:
-                raise PlanError("コピー先のスロットが埋まっています。上書きは計画経由でのみ実行できます。")
+            self._check_overwrite(dst_key, to_position, step)
             self.check_adjust(adjust)
             p = self.read_stored(src_key, position)
             source_name = p.name if pq.field_present(p, "name") else "copy"
@@ -481,6 +520,7 @@ class Device:
         p = preset if preset is not None else self.current_preset()
         guitar = {int(pq.Input.INPUT_1), int(pq.Input.INPUT_2), int(pq.Input.INPUT_1_2)}
         rows = [i for i, c in enumerate(p.chains) if c.in_portid in guitar]
+        self.policy.check_grid("リアンプのための入力の付け替え")
         with self._lock:
             for row in rows:
                 self.qc.set_chain_input(row, int(pq.Input.USB_5))

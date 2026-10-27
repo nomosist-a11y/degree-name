@@ -11,6 +11,7 @@ never mix its backups, renders or job logs with the real unit's.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 
@@ -31,3 +32,17 @@ def lock_file(mock: bool = False) -> Path:
 def sub(name: str, mock: bool = False) -> Path:
     """A named subdirectory of the home (created on demand)."""
     return ensure(home(mock) / name)
+
+
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+
+
+def child(base: Path, ident: str) -> Path:
+    """``base / ident`` for an id that came from outside (a job, plan or session id).
+
+    Ids are plain names - letters, digits, ``.``, ``_``, ``-`` - so one can never
+    point outside ``base``. Anything else is reported as not found.
+    """
+    if not isinstance(ident, str) or not _ID.fullmatch(ident) or ".." in ident:
+        raise FileNotFoundError(f"ID の形が正しくありません: {ident!r}")
+    return base / ident
