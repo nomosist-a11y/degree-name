@@ -70,7 +70,7 @@ def last_md(request: Request):
 
 
 @router.get("/gig/{name}")
-def gig(request: Request, name: str, no_read: bool = False):
+def gig(request: Request, name: str, no_read: bool = True):
     state = _state(request)
     g = health.gig_check(state.device(), name, mock=state.mock, read_missing=not no_read)
     return {**g, "markdown": health.gig_markdown(g)}

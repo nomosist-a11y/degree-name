@@ -380,8 +380,13 @@ def cmd_report(ctx, a):
 
 
 def cmd_gig(ctx, a):
+    read = not a.no_read
+    if read:
+        print("バックアップに無いプリセットは本体に読み込んで診断します(音が切り替わります)。"
+              "読み込まない場合は --no-read。", file=sys.stderr)
+        read = ctx.ask("読み込んでもよいですか?")
     with ctx.rig("health gig") as rig:
-        g = gig_check(rig.device, a.name, mock=ctx.mock, read_missing=not a.no_read)
+        g = gig_check(rig.device, a.name, mock=ctx.mock, read_missing=read)
     if a.format == "json" or ctx.json:
         ctx.out(g)
     else:

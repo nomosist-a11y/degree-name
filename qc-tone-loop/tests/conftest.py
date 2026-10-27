@@ -49,4 +49,5 @@ def client(fake):
     from fastapi.testclient import TestClient
     from qcsuite.web.app import create_app
     with TestClient(create_app(mock=True, fake=fake)) as c:
+        c.get("/")                      # as a browser would: the page sets the session cookie
         yield c

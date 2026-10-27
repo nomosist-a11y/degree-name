@@ -35,6 +35,10 @@ async def preview(request: Request):
     spec = sweep.load_spec(body.get("spec", body))
     rig = state.rig()
     needs_base = any(not c.get("models") for c in spec.get("cells", []))
+    recalls = isinstance(spec.get("base"), dict) and "preset" in spec["base"]
+    if needs_base and recalls and not body.get("allow_recall"):
+        raise QcsuiteError("ベースのプリセットを本体に読み込む必要があります(音が切り替わります)。"
+                           "確認してからもう一度実行してください。")
     base = sweep.establish_base(rig, spec) if needs_base else None
     expanded = sweep.expand(spec, rig.device.catalog, base)
     data, sr = sweep.load_di(spec, rig.mock)

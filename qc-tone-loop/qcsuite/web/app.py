@@ -6,6 +6,15 @@ run alongside it gets a clear "in use" message instead of a tangle of USB
 traffic. It binds to 127.0.0.1 only: there is no login, so it is never
 exposed to the network.
 
+Binding to 127.0.0.1 does not stop another web page in the player's browser
+from sending requests to it, so every request is also checked (the
+``request_guard`` middleware): the Host must be 127.0.0.1 / localhost (defeats
+DNS rebinding), a cross-site Origin is refused, API calls must carry the
+session cookie the app's own pages receive (SameSite=Strict, so other sites'
+requests never carry it), and request bodies must be JSON or a file upload.
+While a background job runs, requests that would change the live grid are
+refused, so nothing interleaves with a sweep or a plan.
+
 Every feature adds its routes from ``qcsuite/web/routes/<name>.py`` (a module
 with ``router``); this file holds what they share - the rig, background jobs,
 plans and their confirmation, notices, file serving and the DI library.
@@ -16,11 +25,14 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import logging
+import re
+import secrets
 import threading
 import traceback
 import webbrowser
 from contextlib import ExitStack, asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -39,6 +51,14 @@ log = logging.getLogger("qcsuite.web")
 STATIC = Path(__file__).parent / "static"
 CONFIRM_WORD = "実行"
 HOST = "127.0.0.1"
+#: Hosts the app answers to. "testserver" is what FastAPI's TestClient sends.
+ALLOWED_HOSTS = {"127.0.0.1", "localhost", "testserver"}
+SESSION_COOKIE = "qcsuite_session"
+#: POSTs that change the live grid (or its routing): refused while a job runs.
+GRID_CHANGING = re.compile(
+    r"^/api/(apply|connect|disconnect|di/record|mock/reset"
+    r"|library/load|panel/(apply|undo|redo|ab/switch|ab/last)"
+    r"|watch/(start|take|sessions/[^/]+/apply)|leveler/check-lane|research/.*)$")
 
 
 class AppState:
@@ -138,6 +158,33 @@ def create_app(mock: bool = False, allow_folders=(), fake=None) -> FastAPI:
 
     app = FastAPI(title="qcsuite", version=__version__, lifespan=lifespan)
     app.state.qc = state
+    token = secrets.token_urlsafe(24)
+
+    @app.middleware("http")
+    async def request_guard(request: Request, call_next):
+        host = (request.headers.get("host") or "").rsplit(":", 1)[0].strip("[]")
+        if host not in ALLOWED_HOSTS:
+            return _error(403, f"このサーバーは 127.0.0.1 からだけ使えます(Host: {host})。")
+        path = request.url.path
+        if path.startswith("/api/"):
+            origin = request.headers.get("origin")
+            if origin and urlparse(origin).hostname not in ALLOWED_HOSTS:
+                return _error(403, "ほかのサイトからの要求は受け付けません。")
+            if request.cookies.get(SESSION_COOKIE) != token:
+                return _error(403, "qcsuite の画面を開き直してください(セッションが確認できません)。")
+            if request.method not in ("GET", "HEAD"):
+                ctype = request.headers.get("content-type", "")
+                has_body = request.headers.get("content-length", "0") not in ("", "0")
+                if has_body and not ctype.startswith(("application/json", "multipart/form-data")):
+                    return _error(415, "本文は JSON かファイルのアップロードで送ってください。")
+                busy = state.jobs.busy()
+                if busy and GRID_CHANGING.match(path):
+                    return _error(409, f"ジョブ {busy} の実行中なので、グリッドを変える操作はできません。"
+                                       "終わるか中断してから実行してください。")
+        response = await call_next(request)
+        if not path.startswith("/api/") and request.cookies.get(SESSION_COOKIE) != token:
+            response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="strict")
+        return response
 
     @app.exception_handler(DeviceBusy)
     async def busy_handler(request: Request, exc: DeviceBusy):

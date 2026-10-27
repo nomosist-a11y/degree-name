@@ -39,7 +39,11 @@ function specBody() {
 }
 
 async function preview() {
-  const r = await api("/api/sweep/preview", { method: "POST", body: { spec: specBody() } });
+  const spec = specBody();
+  // A preset base is recalled to resolve the cells: the unit's sound changes.
+  const recalls = spec && spec.base && typeof spec.base === "object" && spec.base.preset;
+  if (recalls && !window.confirm("ベースのプリセットを本体に読み込みます(音が切り替わり、保存していない編集は消えます)。")) return null;
+  const r = await api("/api/sweep/preview", { method: "POST", body: { spec, allow_recall: !!recalls } });
   put($("preview"), 
     el("p", {}, `${r.count} 通り、見込み ${fmt(r.estimate_s / 60)} 分` +
       (QC.status && QC.status.mode === "mock" ? "(モック)" : "(実機で 1 通り約 16 秒の実測から)")),
@@ -52,6 +56,7 @@ async function preview() {
 async function run() {
   const spec = specBody();
   const pre = await preview();
+  if (!pre) return;
   let confirm_large = false;
   if (pre.large) {
     if (!window.confirm(`${pre.count} 通りになります。本当に実行しますか?`)) return;

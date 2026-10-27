@@ -599,8 +599,13 @@ def _progress(done, total, key):
 
 def cmd_preview(ctx, a):
     spec = load_spec(a.spec)
+    needs_base = any(not c.get("models") for c in spec.get("cells", []))
+    if needs_base and isinstance(spec.get("base"), dict) and "preset" in spec["base"]:
+        print("ベースのプリセットを本体に読み込みます(音が切り替わり、保存していない編集は消えます)。",
+              file=sys.stderr)
+        if not ctx.ask("続けますか?"):
+            return
     with ctx.rig("sweep preview") as rig:
-        needs_base = any(not c.get("models") for c in spec.get("cells", []))
         base = establish_base(rig, spec) if needs_base else None
         expanded = expand(spec, rig.device.catalog, base)
         data, sr = load_di(spec, rig.mock)

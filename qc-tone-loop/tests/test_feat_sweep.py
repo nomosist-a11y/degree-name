@@ -191,7 +191,7 @@ def test_cli_preview_run_results_sensitivity(tmp_path, capsys):
     from qcsuite.cli import main
     spec = tmp_path / "spec.json"
     spec.write_text(json.dumps(_spec()))
-    main(["--mock", "--json", "sweep", "preview", str(spec)])
+    main(["--mock", "--json", "--yes", "sweep", "preview", str(spec)])   # --yes: the base is recalled
     assert json.loads(capsys.readouterr().out)["count"] == 2
     main(["--mock", "--yes", "--json", "sweep", "run", str(spec)])
     summary = json.loads(capsys.readouterr().out)
@@ -207,7 +207,9 @@ def test_cli_preview_run_results_sensitivity(tmp_path, capsys):
 
 def test_web_flow(client):
     spec = _spec()
-    pre = client.post("/api/sweep/preview", json={"spec": spec}).json()
+    refused = client.post("/api/sweep/preview", json={"spec": spec})
+    assert refused.status_code == 400 and "読み込む" in refused.json()["error"]
+    pre = client.post("/api/sweep/preview", json={"spec": spec, "allow_recall": True}).json()
     assert pre["count"] == 2 and not pre["large"]
     r = client.post("/api/sweep/run", json={"spec": spec}).json()
     detail = wait_job(client, r["job"])
