@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qcsuite ホーム</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h2>ホーム</h2>
+  <div class="warn small">
+    音の良し悪しを決めるのはあなたの耳です。qcsuite は、同じ条件で鳴らす・並べる・記録する・整理する、を引き受けます。
+    パソコンからの書き込みでは、キャプチャー・キャビのマイク・未所有プラグインは音に反映されません。
+  </div>
+  <div class="grid2">
+    <section class="panel" id="conn">
+      <h3>接続</h3>
+      <div id="connInfo" class="small muted">確認中…</div>
+      <div class="row">
+        <button class="primary" id="btnConnect">接続する</button>
+        <button id="btnDisconnect">切断する</button>
+        <button id="btnReset" hidden>モックを初期化</button>
+      </div>
+    </section>
+    <section class="panel">
+      <h3>書き込みの許可</h3>
+      <p class="small muted">既定では、qcsuite が作る sandbox(_qcsuite_sandbox)だけに書き込みます。
+        My Presets / Favorite / kami / Cory Wong と Factory Library には書き込めません。</p>
+      <div id="policy" class="small"></div>
+    </section>
+  </div>
+  <section class="panel">
+    <h3>フォルダ</h3>
+    <div id="folders" class="small muted">接続すると表示します。</div>
+  </section>
+  <section class="panel">
+    <h3>DI ライブラリ</h3>
+    <div id="dis"></div>
+    <div class="row">
+      <input type="file" id="diFile" accept="audio/*">
+      <input id="diName" placeholder="名前(省略可)">
+      <button id="btnImport">取り込む</button>
+    </div>
+    <div class="row">
+      <input id="recName" placeholder="録音する DI の名前">
+      <input id="recSec" type="number" value="12" min="2" max="120" style="width:6em"> 秒
+      <button id="btnRecord">Input 1 を録音</button>
+    </div>
+  </section>
+  <section class="panel">
+    <h3>お知らせ</h3>
+    <div id="notices" class="small muted">(まだありません)</div>
+  </section>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/index.js"></script>
+</body>
+</html>
