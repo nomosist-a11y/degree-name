@@ -277,3 +277,9 @@ def test_sandbox_is_not_created_without_room_for_a_setlist(device, fake, monkeyp
     with pytest.raises(PlanError, match="作らずに"):
         plan_mod.execute(plan, device, confirm=True)
     assert not any(c[0] == "create_setlist" for c in fake.calls)
+
+
+def test_factory_library_by_name():
+    assert guard.folder_key("Factory Library") == "/opt/neuraldsp/Factory Library"
+    with pytest.raises(WriteRefused):
+        guard.WritePolicy().check("Factory Library", "保存")

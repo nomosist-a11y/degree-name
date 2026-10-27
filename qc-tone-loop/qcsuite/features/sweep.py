@@ -266,7 +266,9 @@ def establish_base(rig, spec: dict, saved: dict | None = None) -> dict:
         stored = device.read_stored(key, position)
         device.prepare_reamp(stored)
     elif saved is not None:
-        device.apply_patch(restore_patch(saved, device.grid(), device.catalog))
+        patch = restore_patch(saved, device.grid(), device.catalog)
+        if patch["ops"]:                      # already at the base: nothing to send
+            device.apply_patch(patch)
     elif isinstance(base, dict) and "patch" in base:
         device.apply_patch(base["patch"])
     elif base != "current":

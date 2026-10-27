@@ -225,3 +225,11 @@ def test_web_flow(client):
     assert len(data["points"]) == 3
     bad = client.post("/api/sweep/preview", json={"spec": {"cells": []}})
     assert bad.status_code == 400 and "cells" in bad.json()["error"]
+
+
+def test_run_without_a_base_snapshot_in_memory_resumes_from_the_saved_one(rig):
+    # The path `qcsuite sweep run` / the self-test take: the worker rebuilds the
+    # base from base_grid.json even when the grid is already there.
+    job, info = sweep.create(rig, _spec())
+    sweep.run(rig, job)
+    assert all(r.get("flatness") is not None for r in sweep.rows(job))

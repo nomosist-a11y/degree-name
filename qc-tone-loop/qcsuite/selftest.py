@@ -30,7 +30,7 @@ from pathlib import Path
 
 import numpy as np
 
-from qcsuite import paths, presets
+from qcsuite import jobs, paths, presets
 from qcsuite import plan as plan_mod
 from qcsuite.audio import di as di_mod
 from qcsuite.audio import lufs, passthrough
@@ -371,6 +371,249 @@ def s_cleanup(run: Run):
     baseline = run.state.get("baseline") or EXPECTED_COUNTS
     ok = after == baseline
     return (PASS if ok else FAIL), f"開始時 {json.dumps(baseline, ensure_ascii=False)} / 終了時 {json.dumps(after, ensure_ascii=False)}"
+
+
+# -- feature steps ----------------------------------------------------------------------
+# One short pass through each feature, sized to finish in minutes on the unit.
+# Reamp steps use Factory Library presets (read-only on the unit) as sources.
+
+FACTORY_REFS = ["Factory Library:1A", "Factory Library:1B", "Factory Library:1C"]
+
+
+def _ref(ref: str) -> dict:
+    folder, slot = ref.rsplit(":", 1)
+    import pyquadcortex as pq
+    return {"folder": guard.folder_key(folder), "position": pq.slot_to_position(slot)}
+
+
+@step("2 読み取り", "プリセット管理: 一覧・重複・お気に入り比較(読み取りのみ)",
+      "フォルダごとの件数が基準と一致。名前の重複とお気に入り比較が表示される。音は変わらない",
+      "件数が違えば本体の画面と見比べる。お気に入り比較は本体のハートの画面と見比べて、違いを記録")
+def s_library(run: Run):
+    from qcsuite.features import library
+    rows = library.index(run.device)
+    counts: dict = {}
+    for r in rows:
+        counts[r["folder_name"] if "folder_name" in r else guard.folder_name(r["folder"])] = \
+            counts.get(r.get("folder_name") or guard.folder_name(r["folder"]), 0) + 1
+    dupes = library.name_dupes(rows)
+    fav = library.favorites_compare(run.device)
+    baseline = run.state.get("baseline", {})
+    same = all(counts.get(n, 0) == c for n, c in baseline.items() if not n.startswith("_qcsuite"))
+    groups = dupes.get("groups", dupes) if isinstance(dupes, dict) else dupes
+    detail = (f"件数 {json.dumps(counts, ensure_ascii=False)}、名前の重複 "
+              f"{len(groups) if hasattr(groups, '__len__') else groups} 組、お気に入り比較 "
+              f"{json.dumps({k: len(v) for k, v in fav.items() if isinstance(v, list)}, ensure_ascii=False)}")
+    return (PASS if same else FAIL), detail
+
+
+@step("2 読み取り", "バックアップ(1 フォルダ)",
+      "選んだフォルダの全プリセットが JSON になり、git に 1 コミットできる。1 件 10〜25 秒ほど",
+      "途中で止まったら `qcsuite backup run --resume ジョブID`。失敗した件は `qcsuite jobs ジョブID` で確認",
+      changes_sound=True)
+def s_backup(run: Run):
+    from qcsuite.features import backup
+    folder = run.ask_text("バックアップするフォルダ(件数の少ないものを推奨)", "Cory Wong")
+    print(f"  「{folder}」のプリセットを 1 つずつ本体に読み込みます。音が切り替わり、"
+          "本体で保存していない編集は消えます。")
+    if not run.ask("続けますか?"):
+        return SKIP, "ユーザーが中止"
+    job = backup.create_job(run.device, [folder], False, run.mock)
+    result = backup.run_job(run.device, job)
+    latest = backup.load_latest(run.mock)
+    run.state["backup_items"] = latest
+    expected = run.state.get("baseline", {}).get(folder)
+    ok = result["commit"] is not None and result["failed"] == 0 and \
+        (expected is None or result["files"] == expected)
+    return (PASS if ok else FAIL), (f"{result['files']} 件、失敗 {result['failed']} 件、"
+                                    f"コミット {str(result['commit'])[:8]}、ジョブ {job.id}")
+
+
+@step("2 読み取り", "健康診断と資料(バックアップから、読み込みなし)",
+      "要対応・注意・情報の件数が出る。HTML と PDF の資料ができ、PDF の日本語が読める",
+      "PDF の日本語が豆腐(□)になるなら、日本語フォントが見つかっていない。結果を記録する")
+def s_health_sheets(run: Run):
+    from qcsuite.features import backup, health, sheets
+    items = run.state.get("backup_items") or backup.load_latest(run.mock)
+    if not items:
+        return SKIP, "バックアップがないため省略"
+    report = health.scan(items, "backup")
+    out = paths.sub("selftest", run.mock)
+    html = out / "sheets.html"
+    html.write_text(sheets.sheet_html(items[:2]))
+    pdf = sheets.sheet_pdf(items[:1], out / "sheets.pdf")
+    font = sheets.japanese_font()
+    seen = run.ask(f"{html} と {out / 'sheets.pdf'} を開いて、日本語とチェーン図が読めますか?")
+    ok = html.stat().st_size > 1000 and (out / "sheets.pdf").exists() and seen
+    return (PASS if ok else FAIL), (f"診断 {json.dumps(report['counts'], ensure_ascii=False)}、"
+                                    f"PDF {pdf.get('pages', '?')} ページ、フォント {font or 'なし'}")
+
+
+@step("3 sandbox", "言葉で操作: プレビュー・適用・取り消し(保存しない)",
+      "プレビューでは何も変わらない。「少し暗く」を適用すると高域が少し下がり、取り消すと戻る",
+      "画面の値は変わるのに音が変わらなければ、そのブロック名を記録する(文字列パラメーターと同じ現象の可能性)",
+      changes_sound=True)
+def s_panel(run: Run):
+    from qcsuite.features import panel
+    device = run.device
+    device.read_stored(FACTORY, _ref(FACTORY_REFS[0])["position"])
+    before = device.grid()
+    preview = panel.preview(device, "少し暗く")
+    if device.grid() != before:
+        return FAIL, "プレビューでグリッドが変わりました"
+    if preview.get("not_understood") or not preview["patch"]["ops"]:
+        return FAIL, f"指示を解釈できませんでした: {preview.get('not_understood')}"
+    panel.apply(device, preview["patch"], instruction="少し暗く")
+    changed = device.grid() != before
+    darker = run.ask("音が少し暗くなりましたか?")
+    panel.undo(device)
+    restored = presets.diff(presets.normalize(device.current_preset(), device.catalog),
+                            presets.normalize(device.current_preset(), device.catalog)) == [] and \
+        _numeric_equal(before, device.grid())
+    back = run.ask("元の音に戻りましたか?")
+    ok = changed and restored and darker and back
+    return (PASS if ok else FAIL), (f"変更 {len(preview['patch']['ops'])} 操作、適用で変化={changed}、"
+                                    f"取り消しで復帰={restored}、耳: 暗く={darker} 戻った={back}")
+
+
+def _numeric_equal(a: dict, b: dict) -> bool:
+    def values(g):
+        return {(x["row"], x["col"], p["name"]): p.get("value") for x in g["blocks"]
+                for p in x["params"] if "value" in p}
+    va, vb = values(a), values(b)
+    return va.keys() == vb.keys() and all(
+        va[k] is None or vb[k] is None or abs(va[k] - vb[k]) < 1e-3 for k in va)
+
+
+@step("3 sandbox", "編集ウォッチャー: 本体で回したノブを記録",
+      "本体でノブを 1 つ回すと、その値の変化が 1 件として記録される。本体の音は途切れない",
+      "何も記録されなければ読み取りの応答が落ちている可能性。間隔を広げて再試行し、だめなら記録して止める")
+def s_watch(run: Run):
+    from qcsuite.features import watch
+    device = run.device
+    watcher = watch.Watcher(device, run.mock, interval=0.5)
+    watcher.start()
+    if run.mock:
+        grid = device.grid()
+        block = next(b for b in grid["blocks"] if any("real" in p for p in b["params"]))
+        knob = next(p for p in block["params"] if "real" in p)
+        device.apply_patch({"ops": [{"op": "set_param", "row": block["row"], "col": block["col"],
+                                     "param": knob["name"], "value": 0.123}]})
+    else:
+        input("  本体の画面でノブを 1 つ回して、終わったら Enter を押してください...")
+    found = watcher.poll()
+    watcher.stop()
+    changes = [e for e in found if e.get("type") not in ("scene", "segment")]
+    return (PASS if changes else FAIL), f"記録 {len(found)} 件、セッション {watcher.session.id}"
+
+
+@step("4 リアンプ", "音量そろえ: 測定 → sandbox のコピーに補正 → 確認(±1 LU)",
+      "補正後の各コピーが目標から ±1 LU 以内。元のプリセットは変わらない",
+      "外れたら `qcsuite level verify` の数値を記録。行の出力レベルが効かない(手順 4 が FAIL)なら "
+      "`--method gain_block` で再試行", changes_sound=True, reamps=True, writes=True)
+def s_leveler(run: Run):
+    from qcsuite.features import leveler
+    device = run.device
+    method = "lane" if run.state.get("lane_volume_effective", True) else "gain_block"
+    refs = [_ref(r) for r in FACTORY_REFS[:2]]
+    job = leveler.start_measure(device, presets=refs, di=run.state["di_name"], mock=run.mock)
+    jobs.run(job, leveler.measure_work(run.rig, job))
+    proposal = leveler.propose(leveler.results(job.id, run.mock), method=method)
+    plan = leveler.build_plan(device, proposal, di=run.state["di_name"], measure_job=job.id)
+    plan_mod.execute(plan, device, confirm=True)
+    vjob = leveler.start_verify(leveler.load_session(plan.id, run.mock), mock=run.mock)
+    jobs.run(vjob, leveler.measure_work(run.rig, vjob))
+    summary = leveler.verify_summary(vjob.id, run.mock)
+    ok = summary["count"] > 0 and summary["within_goal"] == summary["count"]
+    return (PASS if ok else FAIL), (f"方法 {method}、目標 {summary['target']:.1f} LUFS、"
+                                    f"{summary['within_goal']}/{summary['count']} 件が ±1 LU 以内、"
+                                    f"最大のずれ {summary['worst_abs_lu']} LU")
+
+
+@step("4 リアンプ", "ブラインド比較: 名前を伏せ、音量をそろえた候補ができる",
+      "候補の音量差が 0.1 LU 以内で、名前が表示されない",
+      "音量差が大きければ候補ごとの LUFS を記録する", changes_sound=True, reamps=True)
+def s_tournament(run: Run):
+    from qcsuite.features import tournament
+    t = tournament.create_from_presets(run.rig, [_ref(r) for r in FACTORY_REFS],
+                                       di=run.state["di_name"], title="selftest")
+    levels = []
+    for c in t["candidates"]:
+        path = Path(c["audio"])
+        path = path if path.is_absolute() else paths.home(run.mock) / path
+        audio, sr = features.load(path)
+        levels.append(lufs.integrated_loudness(audio, sr))
+    spread = max(levels) - min(levels) if levels else None
+    hidden = all(set(c) <= {"code", "audio"} for c in t["candidates"])
+    ok = len(levels) >= 2 and spread is not None and spread <= 0.1 and hidden
+    return (PASS if ok else FAIL), (f"候補 {len(levels)} 件、音量差 {spread:.2f} LU、名前は伏せた={hidden}、"
+                                    f"除外 {len(t['excluded'])} 件、ID {t['id']}")
+
+
+@step("4 リアンプ", "スイープ: ゲインを 2 段階で鳴らす",
+      "2 構成ともレンダリングでき、ゲインを上げると 1〜5 kHz の flatness が上がり、クレストが下がる",
+      "無音なら `qctone doctor --reamp-test`。きれいな音が素通しと判定されたら、その数値を記録",
+      changes_sound=True, reamps=True)
+def s_sweep(run: Run):
+    from qcsuite.features import sweep
+    device = run.device
+    device.read_stored(FACTORY, _ref(FACTORY_REFS[0])["position"])
+    device.prepare_reamp()
+    grid = device.grid()
+    amp = next((b for b in grid["blocks"] if b["category"] and "Amplifier" in b["category"]), None)
+    if amp is None:
+        return SKIP, "最初の工場出荷プリセットにアンプがありません"
+    spec = {"title": "selftest", "di": run.state["di_name"], "seconds": DI_SECONDS,
+            "base": "current", "mode": "grid",
+            "cells": [{"row": amp["row"], "col": amp["col"], "params": {"gain": [0.15, 0.9]}}]}
+    job, info = sweep.create(run.rig, spec)
+    sweep.run(run.rig, job)
+    rows = sorted(sweep.rows(job), key=lambda r: r.get("key", ""))
+    flat = [r.get("flatness") for r in rows]
+    crest = [r.get("crest") for r in rows]
+    ok = len(rows) == 2 and None not in flat and flat[1] > flat[0] and crest[1] < crest[0]
+    return (PASS if ok else FAIL), f"flatness {flat}、crest {crest}、ジョブ {job.id}"
+
+
+@step("4 リアンプ", "一括リアンプ: DI × 2 プリセットのステム",
+      "ステムがすべて同じ長さで DI の先頭にそろい、往復遅延が約 312 ms",
+      "Logic で DI と並べてずれていないか耳と目で確かめる。ずれていれば stems.csv の遅延を記録",
+      changes_sound=True, reamps=True)
+def s_batch(run: Run):
+    from qcsuite.features import batch
+    job = batch.create(run.rig, [run.state["di_name"]], presets=FACTORY_REFS[:2])
+    batch.run(run.rig, job)
+    info = batch.finalize(job, run.mock)
+    stems = batch.stems(job)
+    lengths = set()
+    for st in stems:
+        path = Path(st["file"])
+        path = path if path.is_absolute() else paths.home(run.mock) / path
+        lengths.add(features.load(path)[0].shape[0])
+    lat = [st.get("latency_ms") for st in stems if st.get("latency_ms") is not None]
+    ok = len(stems) >= 2 and len(lengths) == 1 and lat and \
+        all(abs(x - MEASURED_LATENCY_MS) < 30 for x in lat)
+    return (PASS if ok else FAIL), (f"ステム {len(stems)} 本、長さ {sorted(lengths)}、遅延 {lat}、"
+                                    f"フォルダ {info.get('folder', '')}")
+
+
+@step("4 リアンプ", "弾いた音の同時録り(DI + ウェット)",
+      "DI にギターが入り、ウェットは本体の音のまま、ずれは数 ms",
+      "ウェットが無音なら行の入力が INPUT_1 か確認。DI が無音なら QCTONE_DRY_IN を確認",
+      changes_sound=True)
+def s_take(run: Run):
+    from qcsuite.features import watch
+    device = run.device
+    device.read_stored(FACTORY, _ref(FACTORY_REFS[0])["position"])     # rows back on INPUT_1
+    if not run.mock:
+        input("  Enter を押したら 5 秒間ギターを弾いてください...")
+    info = watch.take(run.rig, "selftest-take", 5.0, note="selftest")
+    levels = info.get("levels", {})
+    offset = info.get("offset_ms")
+    ok = offset is not None and 0 <= offset < 20 and (levels.get("dry_peak_dbfs") or -99) > -40 \
+        and (levels.get("wet_peak_dbfs") or -99) > -60
+    return (PASS if ok else FAIL), (f"ずれ {offset} ms、DI ピーク {levels.get('dry_peak_dbfs')} dBFS、"
+                                    f"ウェット ピーク {levels.get('wet_peak_dbfs')} dBFS、DI 名 {info.get('di')}")
 
 
 # -- running ----------------------------------------------------------------------------

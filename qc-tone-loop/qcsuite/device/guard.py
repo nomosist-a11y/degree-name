@@ -72,6 +72,8 @@ def folder_key(name_or_key: str) -> str:
         return name_or_key.rstrip("/")
     if _LIBRARY_KEY.match(name_or_key):
         return name_or_key
+    if name_or_key.strip() == "Factory Library":
+        return f"{FACTORY_ROOT}/Factory Library"
     return f"{USER_ROOT}/{name_or_key}"
 
 
