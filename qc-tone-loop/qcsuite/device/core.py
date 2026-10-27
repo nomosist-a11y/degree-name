@@ -344,12 +344,7 @@ class Device:
         with self._lock:
             if key in self._existing_keys():
                 return key
-            room = self.setlist_room()
-            if room["free"] < 1:
-                raise WriteRefused(
-                    f"ユーザーのフォルダが {room['user_folders']} 個あり、上限({room['limit']} 個と"
-                    "想定)に余裕がないため、sandbox を作らずに止めました。上限は実機テスト手順書の"
-                    "最初の項目で確認してください(QCSUITE_SETLIST_LIMIT で変更できます)。")
+            self._require_setlist_room("sandbox")
             self.policy.check(key, "sandbox の作成")
             self.qc.create_setlist(guard.folder_name(key))
             self.notice(INFO, f"sandbox フォルダ「{guard.folder_name(key)}」を作りました。")
@@ -365,7 +360,16 @@ class Device:
             raise PlanError("フォルダの作成は計画(plan)経由で実行してください。")
         with self._lock:
             self.policy.check_create_folder(name, self._existing_keys())
+            self._require_setlist_room(name)
             return self.qc.create_setlist(name)
+
+    def _require_setlist_room(self, name: str):
+        room = self.setlist_room()
+        if room["free"] < 1:
+            raise WriteRefused(
+                f"ユーザーのフォルダが {room['user_folders']} 個あり、上限({room['limit']} 個と"
+                f"想定)に余裕がないため、「{name}」を作らずに止めました。上限は実機テスト手順書の"
+                "最初の項目で確認してください(QCSUITE_SETLIST_LIMIT で変更できます)。")
 
     def delete_folder(self, name: str, *, step=None):
         if step is None:

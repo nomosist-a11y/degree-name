@@ -271,6 +271,9 @@ def test_sandbox_is_not_created_without_room_for_a_setlist(device, fake, monkeyp
     room = device.setlist_room()
     assert room["user_folders"] == 8 and room["limit"] == 12
     monkeypatch.setenv("QCSUITE_SETLIST_LIMIT", "8")
-    with pytest.raises(WriteRefused, match="sandbox を作らずに"):
+    with pytest.raises(WriteRefused, match="sandbox」を作らずに"):
         device.ensure_sandbox()
+    plan = plan_mod.Plan("make", steps=[plan_mod.Step("create_folder", SANDBOX)])
+    with pytest.raises(PlanError, match="作らずに"):
+        plan_mod.execute(plan, device, confirm=True)
     assert not any(c[0] == "create_setlist" for c in fake.calls)
