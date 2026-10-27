@@ -19,8 +19,10 @@
 └─────┘ (納得するまで繰り返す)
       │
       ▼
-   User Presetに保存する(明示的に指示したときだけ)
+   sandboxフォルダの空きスロットに保存する(明示的に指示したときだけ)
 ```
+
+同じフォルダに、日々の操作の手間を減らす **qcsuite** も入っています(下の「qcsuite」を参照)。
 
 ## 必要なもの
 
@@ -64,6 +66,45 @@ Claude Codeは `CLAUDE.md` の手順に従って、`qctone init`、`record-di`�
 | `qctone feedback NAME "..."` | 聴いた感想を記録する |
 | `qctone restore NAME [--iter N]` | 以前の状態に戻す |
 | `qctone save NAME --slot 30A --title "..."` | sandbox(`_qcsuite_sandbox`)の空きスロットに保存する。自分のフォルダへの保存と上書きはしない |
+
+## qcsuite
+
+練習・ライブ準備・録音・プリセット管理のための道具箱です。考え方は「**音の良し悪しの判断は人、手間のかかる操作・比較・整理・記録は機械**」。
+ブラウザの画面(`qcsuite serve`、127.0.0.1だけで待ち受け)とコマンド(`qcsuite ...`)の両方から使えます。
+
+> **状態:** すべての機能はモック(実機を真似た FakeQuadCortex)で開発・テストしたもので、**実機では未確認**です。
+> 使い始める前に [docs/hardware-test-plan.md](docs/hardware-test-plan.md) を実行してください(`qcsuite selftest --hardware` が対話式に進めます)。
+
+```bash
+qcsuite --mock selftest      # 実機なしで全機能をひと通り動かす
+qcsuite --mock serve         # 実機なしで画面を試す
+qcsuite serve                # 実機(Cortex Controlは終了しておく)
+```
+
+| 機能 | コマンド | 内容 |
+|---|---|---|
+| プリセット管理 | `qcsuite library` | 全フォルダの一覧・検索・重複の検出、別フォルダへのコピーの計画、キャプチャー/IR/カタログの検索、お気に入りとFavoriteフォルダの比較(読むだけ) |
+| バックアップ | `qcsuite backup` | 全プリセットを正規化したJSONにしてgitで履歴管理、差分表示、sandboxへの復元 |
+| 音量そろえ | `qcsuite level` | 同じDIでLUFSを測り、補正案を作り、sandboxのコピーにだけ当てて測り直す |
+| ブラインド比較 | `qcsuite tournament` | 音量をそろえ、名前を伏せて2つずつ比べ、Eloで順位を付ける |
+| 言葉で操作 | `qcsuite panel` | 「少し暗く」などを操作に変えてプレビューしてから送る。取り消しとA/B切り替え |
+| スイープ | `qcsuite sweep` | ノブやモデルの組み合わせを総当たりでレンダリングし、素通しを除外して記録 |
+| 資料 | `qcsuite sheets` | チェーン図・ノブ表・シーン早見表のHTML/PDF、共有パック |
+| セットリスト | `qcsuite setlist` | 曲順から配置の計画とMIDIのプログラムチェンジ表を作る |
+| 一括リアンプ | `qcsuite batch` | DI×プリセットを鳴らし、Logic Pro用にそろえたステムを書き出す。音の地図 |
+| 健康診断 | `qcsuite health` | 入力がUSBのまま、未所有プラグインなどの検出と、ライブ前のチェックリスト |
+| 編集ウォッチャー | `qcsuite watch` | 本体で回したノブを記録し、DIとウェットの同時録りをその記録に紐づける |
+| DIライブラリ | `qcsuite di` | リアンプに使うDIの登録・録音・切り出し |
+| 研究 | `qcsuite research` | パソコンから効かない操作を調べるための読み取り専用の道具 |
+
+安全のしくみ(要点):
+
+- 書き込みの既定の行き先は、qcsuiteが作る `_qcsuite_sandbox` フォルダだけです。My Presets / Favorite / kami / Cory Wong / Factory Library はコードで拒否します。Live / Artist / Song / Workshop は `--allow-folder` で明示したときだけ書き込めます。
+- 保存・コピー・削除・移動は計画(plan)として表示し、既定はdry-runです。破壊的な操作の前にはバックアップを取り、実行後に読み戻して確かめます。
+- 本体へのアクセスは `~/.qctone/device.lock` で1プロセスに限ります(qctoneも同じロックを使います)。本体全体の設定(I/O、Global EQ、ファームウェア)は呼びません。
+- リアンプの前には、毎回モニターの音量を下げるよう求めます。
+
+使い方の詳細は [docs/user-guide.md](docs/user-guide.md)、Claude Codeが守るルールは `CLAUDE.md`、パソコンから効かない操作の調査は [docs/research-host-limits.md](docs/research-host-limits.md)、アイデアの一覧は [docs/ideas.md](docs/ideas.md) にあります。
 
 ## 注意
 

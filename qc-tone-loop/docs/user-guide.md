@@ -168,7 +168,7 @@ qcsuite --mock selftest                         # モックで全機能をひと
 ### D. 編集ウォッチャーと録音(編集ウォッチャー画面 / `qcsuite watch`)
 
 - `start [--interval 2]` — 本体で回したノブを、読み取りだけで記録します(本体の音は途切れません)。端末では `n メモ`、`t 名前 秒`(録音)、`q`(終了)が使えます。
-- `show` / `export --md|--patch` / `apply` / `to-sandbox --source kami:1E [--apply]` — 記録をまとめたり、パッチとして再現したり、sandbox に保存したりします。`--source` を付けると元のプリセットに変更を当てて保存するので、キャプチャーやマイクも鳴ったままです。
+- `list` / `show 記録ID` / `export 記録ID --md|--patch` / `apply 記録ID` / `to-sandbox 記録ID --source kami:1E [--apply]` — 記録をまとめたり、パッチとして再現したり、sandbox に保存したりします。`--source` を付けると元のプリセットに変更を当てて保存するので、キャプチャーやマイクも鳴ったままです。
 - `take 名前 --seconds 20` — 弾いた音を、DI(USB 1)とウェット(USB 3/4)の 1 本のストリームで同時に録り、DI ライブラリに登録して、そのときのプリセットとノブに紐づけます。行の入力が INPUT_1 のときだけ録ります(リアンプの直後は USB_5 のままのことがあるので、プリセットを呼び直してください)。
 
 ### 研究ツール(`qcsuite research`)
