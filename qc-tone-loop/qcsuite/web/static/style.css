@@ -75,7 +75,9 @@ input, select, textarea {
   background: var(--bg); color: var(--ink); max-width: 100%;
 }
 textarea { width: 100%; min-height: 80px; }
-label { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; }
+label { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px;
+  max-width: 100%; flex-wrap: wrap; }
+label select, label input:not([type="checkbox"]):not([type="radio"]) { min-width: 0; max-width: 100%; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 table { border-collapse: collapse; width: 100%; font-size: 14px; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }

@@ -11,6 +11,14 @@ const PAGES = [
 
 const QC = { status: null };
 
+// Native replaceChildren() renders null as the text "null" and does not flatten
+// arrays. Every page builds content with optional parts, so normalize it once.
+const nativeReplaceChildren = Element.prototype.replaceChildren;
+Element.prototype.replaceChildren = function (...kids) {
+  return nativeReplaceChildren.apply(this, kids.flat(Infinity).filter(
+    k => k !== null && k !== undefined && k !== false));
+};
+
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
