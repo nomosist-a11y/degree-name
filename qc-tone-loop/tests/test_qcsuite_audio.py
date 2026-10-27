@@ -138,3 +138,18 @@ def test_di_library_round_trip(tmp_path):
     assert sr == SR and data.ndim == 1
     with pytest.raises(FileNotFoundError):
         di_mod.load("missing", True)
+
+
+def test_render_preset_recipe(rig, di):
+    from qcsuite.audio import reamp
+    dry = features.analyze_array(di[:, None], SR)
+    pos = next(p["index"] for p in rig.device.presets("/media/p4/Presets/My Presets")
+               if p["name"] == "aaaa")
+    info = reamp.render_preset(rig, "/media/p4/Presets/My Presets", pos, di, SR, dry)
+    assert info["preset"]["name"] == "aaaa"            # holds an unowned Plini block
+    assert info["excluded"]["excluded"]
+    assert any("Plini" in r or "plini" in r for r in info["excluded"]["reasons"])
+    info = reamp.render_preset(rig, "/media/p4/Presets/kami", 4, di, SR, dry)
+    assert not info["excluded"]["excluded"]
+    assert info["loudness"]["lufs"] < 0
+    assert any(n.kind == "sound_change" for n in rig.device.notices)

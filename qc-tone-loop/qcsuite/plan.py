@@ -45,6 +45,7 @@ class Step:
     overwrites: str | None = None    # name currently at the target slot
     note: str = ""
     payload: dict | None = None      # a normalized preset, for rebuild
+    adjust: dict | None = None       # edits between recall and save, for copy
 
     @property
     def destructive(self) -> bool:
@@ -72,6 +73,10 @@ class Step:
             text = f"フォルダ削除: 「{where}」"
         else:
             text = f"{self.action}: {where}"
+        if self.adjust and self.adjust.get("lane_db"):
+            levels = ", ".join(f"行{int(r) + 1} {db:+.1f} dB"
+                               for r, db in self.adjust["lane_db"].items())
+            text += f"(出力レベルを {levels} に設定)"
         if self.overwrites:
             text += f"(上書き: 「{self.overwrites}」が消えます)"
         if self.note:
@@ -215,7 +220,8 @@ def _verify(step: Step, device, stored_name: str | None):
 def _run_step(step: Step, device, rebuild=None):
     if step.action == "copy":
         return device.copy_preset(step.source["folder"], step.source["position"], step.folder,
-                                  to_position=step.position, name=step.name, step=step)
+                                  to_position=step.position, name=step.name, step=step,
+                                  adjust=step.adjust)
     if step.action == "save":
         return device.save_current(step.folder, step.position, step.name, step=step)
     if step.action == "rebuild":

@@ -78,11 +78,10 @@ def true_peak_dbtp(data, oversample: int = 4) -> float:
 
 def report(data, sr: int) -> dict:
     lufs = integrated_loudness(data, sr)
-    return {
-        "lufs": None if not np.isfinite(lufs) else round(lufs, 2),
-        "sample_peak_dbfs": round(sample_peak_dbfs(data), 2),
-        "true_peak_dbtp": round(true_peak_dbtp(data), 2),
-    }
+    def r(v):
+        return round(float(v), 2) if np.isfinite(v) else None
+    return {"lufs": r(lufs), "sample_peak_dbfs": r(sample_peak_dbfs(data)),
+            "true_peak_dbtp": r(true_peak_dbtp(data))}
 
 
 def gain_to(data, sr: int, target_lufs: float, ceiling_dbtp: float = -1.0):

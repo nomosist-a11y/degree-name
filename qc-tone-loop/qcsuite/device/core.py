@@ -370,8 +370,13 @@ class Device:
 
     def copy_preset(self, src_key: str, position: int, dst_key: str,
                     to_position: int | None = None, name: str | None = None, *,
-                    step=None) -> str | None:
-        """Copy a preset. Recalls the source (the sound changes) and drops its tags."""
+                    step=None, adjust: dict | None = None) -> str | None:
+        """Copy a preset. Recalls the source (the sound changes) and drops its tags.
+
+        ``adjust`` edits the recalled grid before it is saved - so far only
+        ``{"lane_db": {row: dB}}``, the row output levels the leveler corrects.
+        The source preset itself is never written.
+        """
         with self._lock:
             self.policy.check(dst_key, "コピー")
             if to_position is None:
@@ -381,7 +386,23 @@ class Device:
                 raise PlanError("コピー先のスロットが埋まっています。上書きは計画経由でのみ実行できます。")
             p = self.read_stored(src_key, position)
             source_name = p.name if pq.field_present(p, "name") else "copy"
+            for row, db in ((adjust or {}).get("lane_db") or {}).items():
+                self.set_lane_volume_db(int(row), float(db))
             return self.save_current(dst_key, to_position, name or source_name, step=step)
+
+    def prepare_reamp(self, preset=None) -> list[int]:
+        """Point the live grid's guitar-input rows at USB 5 so a reamp reaches them.
+
+        Unsaved, like every grid edit: recalling the preset undoes it, and
+        nothing here ever saves it. Returns the rows re-pointed.
+        """
+        p = preset if preset is not None else self.current_preset()
+        guitar = {int(pq.Input.INPUT_1), int(pq.Input.INPUT_2), int(pq.Input.INPUT_1_2)}
+        rows = [i for i, c in enumerate(p.chains) if c.in_portid in guitar]
+        with self._lock:
+            for row in rows:
+                self.qc.set_chain_input(row, int(pq.Input.USB_5))
+        return rows
 
     def delete_preset(self, key: str, name: str, *, step=None):
         if step is None:

@@ -243,3 +243,25 @@ def test_second_process_gets_a_clear_busy_error(tmp_path):
     with device_lock(lock, timeout=2):
         with device_lock(lock, timeout=0.1):     # re-entrant in one process
             pass
+
+
+def test_copy_with_adjusted_output_level_leaves_the_source_alone(device, fake):
+    key = device.ensure_sandbox()
+    source_before = presets.normalize(device.read_stored(f"{USER}/kami", 4), device.catalog)
+    plan = plan_mod.Plan("level", steps=[plan_mod.Step(
+        "copy", key, position=0, name="leveled", source={"folder": f"{USER}/kami", "position": 4},
+        adjust={"lane_db": {"0": -3.5}})])
+    assert "-3.5 dB" in plan.render()
+    plan_mod.execute(plan, device, confirm=True)
+    copy = presets.normalize(device.read_stored(key, 0), device.catalog)
+    assert copy["rows"][0]["lane"]["VOLUME"]["db"] == pytest.approx(-3.5, abs=0.05)
+    source_after = presets.normalize(device.read_stored(f"{USER}/kami", 4), device.catalog)
+    assert source_after["fingerprint"] == source_before["fingerprint"]
+
+
+def test_prepare_reamp_points_guitar_rows_at_usb5_without_saving(device, fake):
+    device.read_stored(f"{USER}/kami", 4)
+    assert device.prepare_reamp() == [0]
+    assert device.grid()["rows"][0]["in_port"] == "USB_5"
+    stored = fake.folders[f"{USER}/kami"][4].preset
+    assert stored.chains[0].in_portid == int(pq.Input.INPUT_1)
