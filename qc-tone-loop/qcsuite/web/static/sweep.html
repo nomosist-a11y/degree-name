@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qcsuite スイープ</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h2>スイープ(総当たり)</h2>
+  <div class="warn small">
+    どのブロックの、どのモデルとノブを、どの範囲で動かすかを指定して、全部を同じ DI で鳴らして記録します。
+    どれが良いかは決めません。結果は並べ替えて試聴し、気になるものはブラインド比較に送れます。
+    素通し(DI のまま返ってくる音)や、パソコンから切り替えても鳴らないブロック(未所有プラグイン、キャプチャー)を含む構成は「除外」になります。
+    実機では 1 通りあたり約 16 秒(12 秒の DI の場合)かかります。
+  </div>
+  <div id="jobbox"></div>
+
+  <section class="panel">
+    <h3>かんたん作成</h3>
+    <div class="row">
+      <label>行 <input id="fRow" type="number" min="1" max="4" value="1" style="width:4em"></label>
+      <label>列 <input id="fCol" type="number" min="1" max="8" value="2" style="width:4em"></label>
+      <label>モデル <input id="fModels" placeholder="空欄=今のブロック / 例: Brit 2203, PV 505 Lead"></label>
+    </div>
+    <div class="row">
+      <label>ノブ <input id="fParam" value="gain" style="width:8em"></label>
+      <label>値 <input id="fValues" value="0.2, 0.5, 0.8" placeholder="0〜1 をカンマ区切り"></label>
+      <label>ノブ 2 <input id="fParam2" placeholder="treble など" style="width:8em"></label>
+      <label>値 <input id="fValues2" placeholder="0.3, 0.7"></label>
+    </div>
+    <div class="row">
+      <label>組み合わせ <select id="fMode"><option value="grid">すべての組み合わせ</option>
+        <option value="one_at_a_time">1 つずつ動かす</option></select></label>
+      <label>ベース <input id="fBase" value="current" placeholder="current か kami:1E"></label>
+      <label>DI <select id="fDi"></select></label>
+      <label>秒数 <input id="fSeconds" type="number" min="1" step="1" placeholder="全部" style="width:5em"></label>
+      <button id="btnBuild">指定(JSON)に反映</button>
+    </div>
+    <p class="small muted">ノブは名前(GAIN など)か別名(gain, bass, mid, treble, presence, depth, level)。
+      gain はブロックに合わせて GAIN / DRIVE / INPUT GAIN / GAIN 1 / VOLUME に読み替えます。
+      スイッチは値ではなく選択肢の名前で指定します(JSON で {"options": ["Off","On"]})。</p>
+  </section>
+
+  <section class="panel">
+    <h3>指定(JSON)</h3>
+    <textarea id="spec" rows="12" spellcheck="false"></textarea>
+    <div class="row">
+      <button id="btnPreview">件数を確認</button>
+      <button id="btnRun" class="primary">実行</button>
+    </div>
+    <div id="preview" class="small"></div>
+  </section>
+
+  <section class="panel">
+    <h3>結果</h3>
+    <div class="row">
+      <select id="jobSel"></select>
+      <label>並べ替え <select id="sortSel">
+        <option value="key">番号</option><option value="score">スコア(参照あり)</option>
+        <option value="distance">参照との距離</option><option value="lufs">音量</option>
+        <option value="flatness">flatness</option><option value="crest">クレスト</option>
+        <option value="tilt">傾き</option><option value="centroid">重心</option></select></label>
+      <label><input type="checkbox" id="hideEx"> 除外を隠す</label>
+      <button id="btnResume">続きから再開</button>
+    </div>
+    <div id="results" class="small muted">ジョブを選んでください。</div>
+    <div class="row">
+      <button id="btnSendSel">選んだ候補をブラインド比較へ</button>
+      <label>上位 <input id="topN" type="number" value="8" min="2" style="width:4em"> 件を
+        <button id="btnSendTop">ブラインド比較へ</button></label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>ノブの効き方マップ</h3>
+    <p class="small muted">1 つのノブを 0 から 1 まで動かして、測定値(傾き・重心・flatness・クレスト・音量)の変化をグラフにします。
+      現在のグリッドがベースです(保存はしません)。</p>
+    <div class="row">
+      <label>行 <input id="sRow" type="number" min="1" max="4" value="1" style="width:4em"></label>
+      <label>列 <input id="sCol" type="number" min="1" max="8" value="2" style="width:4em"></label>
+      <label>ノブ <input id="sParam" value="gain" style="width:8em"></label>
+      <label>段数 <input id="sSteps" type="number" min="2" max="21" value="7" style="width:4em"></label>
+      <label>ベース <input id="sBase" value="current" style="width:8em"></label>
+      <button id="btnSens" class="primary">測る</button>
+    </div>
+    <div id="sens"></div>
+  </section>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/sweep.js"></script>
+</body>
+</html>
