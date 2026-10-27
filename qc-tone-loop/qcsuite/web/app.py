@@ -130,6 +130,9 @@ def create_app(mock: bool = False, allow_folders=(), fake=None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         yield
+        watcher = getattr(state, "watch_bg", None)       # the edit watcher's poll thread
+        if watcher is not None and watcher.running:
+            watcher.stop()
         state.checkpoint()
         state.close()
 

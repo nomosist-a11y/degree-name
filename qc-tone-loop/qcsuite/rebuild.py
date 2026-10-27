@@ -93,7 +93,7 @@ def rebuild_grid(device, normalized: dict) -> list[str]:
             device.set_lane_volume_db(r["row"], lane["VOLUME"]["db"])
         for name in ("PAN", "MUTE"):
             if name in lane and lane[name].get("value") is not None:
-                device.qc.set_lane_output(r["row"], name, value=lane[name]["value"])
+                device.set_lane_param(r["row"], name, lane[name]["value"])
     for i, label in enumerate(normalized.get("scene_labels", [])):
         device.set_scene_label(i, label)
     return warnings

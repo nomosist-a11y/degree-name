@@ -306,6 +306,20 @@ class Device:
         with self._lock:
             self.qc.set_lane_output(row, "VOLUME", value=pq.db_to_lane_level(db))
 
+    def set_lane_param(self, row: int, name: str, value: float):
+        """A row output parameter (VOLUME, PAN, MUTE, SOLO) as a 0..1 wire value.
+
+        MUTE is 1.0 = muted (pyquadcortex ``set_lane_output``). Edits the live
+        grid only.
+        """
+        with self._lock:
+            self.qc.set_lane_output(row, name, value=float(value))
+
+    def set_gate_param(self, row: int, name: str, value: float):
+        """A row input gate parameter (NOISE REDUCTION, BYPASS, INPUT GAIN), 0..1."""
+        with self._lock:
+            self.qc.set_input_gate(row, name, value=float(value))
+
     def output_rows(self, preset=None) -> list[int]:
         """Rows whose output reaches Out 1/2 (directly or as MULTIPLE)."""
         p = preset if preset is not None else self.current_preset()
