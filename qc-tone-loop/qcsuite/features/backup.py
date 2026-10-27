@@ -348,9 +348,13 @@ def _match_key(ref: str, by_slot: dict):
     for key, (rel, n) in by_slot.items():
         if ref == rel:
             return key
-    if "/" not in ref:
-        raise QcsuiteError(f"「{ref}」の指定が分かりません。「フォルダ/1A」「フォルダ/名前」かファイル名で指定してください。")
-    folder, rest = ref.rsplit("/", 1)
+    if ":" in ref and "/" not in ref.rsplit(":", 1)[1]:
+        folder, rest = ref.rsplit(":", 1)          # "kami:1E", as the other commands take
+    elif "/" in ref:
+        folder, rest = ref.rsplit("/", 1)
+    else:
+        raise QcsuiteError(f"「{ref}」の指定が分かりません。「フォルダ/1A」「フォルダ:1A」"
+                           "「フォルダ/名前」かファイル名で指定してください。")
     folder_key = guard.folder_key(folder)
     try:
         position = pq.slot_to_position(rest)

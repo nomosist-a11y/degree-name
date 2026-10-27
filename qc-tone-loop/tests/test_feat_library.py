@@ -19,6 +19,12 @@ def _backup(device, folders):
     return backup.run_job(device, job)
 
 
+def test_refs_accept_both_separators():
+    assert library.parse_ref("kami/1E") == library.parse_ref("kami:1E")
+    assert library.parse_ref("Factory Library:1A")[0] == "/opt/neuraldsp/Factory Library"
+    assert library.parse_ref("kami/Henriksen") == (f"{USER}/kami", "Henriksen")
+
+
 def test_index_search_and_sort(device):
     rows = library.index(device)
     assert len(rows) == 51 + 21 + 20 + 15

@@ -161,9 +161,13 @@ def _keep_suggestion(entries: list[dict]) -> dict:
 # -- copying ------------------------------------------------------------------------------
 
 def parse_ref(ref: str) -> tuple[str, str]:
-    """``"My Presets/1A"`` or ``"kami/Henriksen"`` -> (folder key, slot-or-name)."""
+    """``"My Presets/1A"``, ``"kami/Henriksen"`` or ``"kami:1E"`` (the form the
+    other commands use) -> (folder key, slot-or-name)."""
+    if ":" in ref and "/" not in ref.rsplit(":", 1)[1]:
+        folder, rest = ref.rsplit(":", 1)
+        return guard.folder_key(folder), rest.strip()
     if "/" not in ref.strip("/"):
-        raise QcsuiteError(f"「{ref}」は「フォルダ/1A」か「フォルダ/名前」で指定してください。")
+        raise QcsuiteError(f"「{ref}」は「フォルダ/1A」「フォルダ:1A」か「フォルダ/名前」で指定してください。")
     folder, rest = ref.rsplit("/", 1)
     return guard.folder_key(folder), rest
 
