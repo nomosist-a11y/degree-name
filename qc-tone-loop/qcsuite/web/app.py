@@ -3,8 +3,8 @@
 FastAPI backend, plain HTML/JS frontend in ``static/`` (no build step), Japanese
 UI. The server holds the device lock while it is connected, so a CLI command
 run alongside it gets a clear "in use" message instead of a tangle of USB
-traffic. It binds to 127.0.0.1 by default: there is no login, so anyone who
-can reach the port can drive the unit.
+traffic. It binds to 127.0.0.1 only: there is no login, so it is never
+exposed to the network.
 
 Every feature adds its routes from ``qcsuite/web/routes/<name>.py`` (a module
 with ``router``); this file holds what they share - the rig, background jobs,
@@ -38,6 +38,7 @@ from qctone import device as qdevice
 log = logging.getLogger("qcsuite.web")
 STATIC = Path(__file__).parent / "static"
 CONFIRM_WORD = "実行"
+HOST = "127.0.0.1"
 
 
 class AppState:
@@ -299,13 +300,12 @@ def qdevice_key(name: str) -> str:
     return folder_key(name)
 
 
-def serve(mock: bool, allow_folders=(), host: str = "127.0.0.1", port: int = 8765,
-          open_browser: bool = True):
+def serve(mock: bool, allow_folders=(), port: int = 8765, open_browser: bool = True):
+    """Run the app on 127.0.0.1 only. There is no login, so it is never exposed
+    to the network (LAN access is a future idea, not built)."""
     import uvicorn
-    if host not in ("127.0.0.1", "localhost"):
-        print(f"注意: {host} で公開します。認証がないため、同じネットワークの誰でも本体を操作できます。")
-    url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}/"
+    url = f"http://{HOST}:{port}/"
     print(f"qcsuite {'(モック)' if mock else '(実機)'}: {url}  終了は Ctrl-C")
     if open_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    uvicorn.run(create_app(mock, allow_folders), host=host, port=port, log_level="warning")
+    uvicorn.run(create_app(mock, allow_folders), host=HOST, port=port, log_level="warning")

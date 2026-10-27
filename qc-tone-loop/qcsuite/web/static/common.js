@@ -6,7 +6,7 @@ const PAGES = [
   ["leveler", "音量そろえ"], ["tournament", "ブラインド比較"], ["panel", "言葉で操作"],
   ["sweep", "スイープ"], ["sheets", "資料"], ["setlist", "セットリスト"],
   ["batch", "一括リアンプ"], ["health", "健康診断"], ["watch", "編集ウォッチャー"],
-  ["remote", "リモコン"], ["jobs", "ジョブ"],
+  ["jobs", "ジョブ"],
 ];
 
 const QC = { status: null };

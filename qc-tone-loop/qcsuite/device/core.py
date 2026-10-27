@@ -315,14 +315,38 @@ class Device:
     def _existing_keys(self) -> set[str]:
         return {f["key"] for f in self.setlists()}
 
+    def setlist_room(self) -> dict:
+        """How many user setlists exist against the unit's limit.
+
+        Neural DSP's support page numbers setlists 0 (Factory) and 1 (My
+        Presets) to 12 and says up to 12 custom setlists can be stored; read
+        conservatively, at most :data:`guard.SETLIST_LIMIT` user folders in all,
+        My Presets included. The real limit is the first thing the hardware
+        test plan checks; ``QCSUITE_SETLIST_LIMIT`` overrides it once known.
+        """
+        user = [f for f in self.setlists() if f["kind"] in ("user", "sandbox")]
+        limit = guard.setlist_limit()
+        return {"user_folders": len(user), "limit": limit, "free": limit - len(user),
+                "names": [f["name"] for f in user]}
+
     def ensure_sandbox(self, name: str = guard.SANDBOX_NAME) -> str:
-        """The sandbox folder's key, creating it the first time."""
+        """The sandbox folder's key, creating it the first time.
+
+        Refuses to create it when the unit has no room for another setlist:
+        the sandbox must never take the last slot the player might need.
+        """
         key = guard.folder_key(name)
         if not guard.is_sandbox(key):
             raise WriteRefused(f"sandbox の名前は {guard.SANDBOX_PREFIX} で始めてください: {name}")
         with self._lock:
             if key in self._existing_keys():
                 return key
+            room = self.setlist_room()
+            if room["free"] < 1:
+                raise WriteRefused(
+                    f"ユーザーのフォルダが {room['user_folders']} 個あり、上限({room['limit']} 個と"
+                    "想定)に余裕がないため、sandbox を作らずに止めました。上限は実機テスト手順書の"
+                    "最初の項目で確認してください(QCSUITE_SETLIST_LIMIT で変更できます)。")
             self.policy.check(key, "sandbox の作成")
             self.qc.create_setlist(guard.folder_name(key))
             self.notice(INFO, f"sandbox フォルダ「{guard.folder_name(key)}」を作りました。")

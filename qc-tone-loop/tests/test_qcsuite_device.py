@@ -265,3 +265,12 @@ def test_prepare_reamp_points_guitar_rows_at_usb5_without_saving(device, fake):
     assert device.grid()["rows"][0]["in_port"] == "USB_5"
     stored = fake.folders[f"{USER}/kami"][4].preset
     assert stored.chains[0].in_portid == int(pq.Input.INPUT_1)
+
+
+def test_sandbox_is_not_created_without_room_for_a_setlist(device, fake, monkeypatch):
+    room = device.setlist_room()
+    assert room["user_folders"] == 8 and room["limit"] == 12
+    monkeypatch.setenv("QCSUITE_SETLIST_LIMIT", "8")
+    with pytest.raises(WriteRefused, match="sandbox を作らずに"):
+        device.ensure_sandbox()
+    assert not any(c[0] == "create_setlist" for c in fake.calls)

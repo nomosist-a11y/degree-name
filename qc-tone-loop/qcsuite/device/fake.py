@@ -78,6 +78,9 @@ class FakeConfig:
     owned_plugins: tuple = data.OWNED_PLUGINS
     strings_apply_on_recall: bool = False
     ir_is_inert: bool = True
+    #: Unknown on hardware (the second item of the hardware test plan): if the
+    #: row output VOLUME also only reads back, the leveler must use another knob.
+    lane_volume_inert: bool = False
 
 
 @dataclass
@@ -129,6 +132,7 @@ class FakeQuadCortex:
         self.scene = 0
         self.live = self._empty_preset("New Preset")
         self.live_audible: dict = {}
+        self.lane_audible: dict = {}
         self.loaded_from = None
         self.dirty = False
         self._recall(data.FACTORY_KEY, 0, count=False)
@@ -300,7 +304,8 @@ class FakeQuadCortex:
         with self._lock:
             state = {"folders": self.folders, "names": self.folder_names,
                      "favorites": self.favorites_list, "live": self.live.SerializeToString(),
-                     "audible": self.live_audible, "scene": self.scene,
+                     "audible": self.live_audible, "lane_audible": self.lane_audible,
+                     "scene": self.scene,
                      "loaded_from": self.loaded_from}
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(".tmp")
@@ -317,6 +322,7 @@ class FakeQuadCortex:
             self.favorites_list = state["favorites"]
             self.live = Preset_pb2.BinaryPreset.FromString(state["live"])
             self.live_audible = state["audible"]
+            self.lane_audible = state.get("lane_audible", {})
             self.scene = state["scene"]
             self.loaded_from = state["loaded_from"]
 
@@ -460,6 +466,8 @@ class FakeQuadCortex:
         self.loaded_from = (key, position)
         self.dirty = False
         self.live_audible = self._audible_from_preset(p)
+        self.lane_audible = {i: c.output_control[0].params[0].param_values[0].float_value
+                             for i, c in enumerate(p.chains) if len(c.output_control)}
         if not self.config.strings_apply_on_recall:
             self.live_audible.update(copy.deepcopy(stored.taint))
         if count:
@@ -538,6 +546,8 @@ class FakeQuadCortex:
                     names = [s.name for s in self._catalog_obj[data.LANE_OUTPUT].parameters]
                     for idx, prm in enumerate(lane.params[: len(names)]):
                         lane_values[names[idx]] = prm.param_values[0].float_value
+                    if self.config.lane_volume_inert and i in self.lane_audible:
+                        lane_values["VOLUME"] = self.lane_audible[i]
                 blocks = []
                 for b in sorted((b for b in pq.blocks(p) if b.row == i), key=lambda b: b.column):
                     sound = copy.deepcopy(self.live_audible.get(

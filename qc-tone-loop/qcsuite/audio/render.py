@@ -12,6 +12,14 @@ Two interchangeable renderers sit behind :func:`render`:
   delayed by the round trip measured on the player's unit (about 312 ms) and
   given a noise floor, so the alignment code below runs on both paths.
 
+Playing takes (:func:`record_take`) are the other direction: the player plays,
+and one input stream records USB 1 (Input 1, dry) and USB 3/4 (Out 1/2, wet)
+together - confirmed on the player's unit with ``mapping=[1, 3, 4]``. In that
+case dry and wet are only apart by the unit's internal processing (a few ms);
+the ~312 ms round trip applies to reamping alone. For the wet side to carry
+the playing, the row must take its input from INPUT_1 - during a reamp it is
+USB 5 - so a take refuses to start when no row is fed from Input 1.
+
 Alignment: the raw recording starts with qctone's 0.5 s pre-roll plus the round
 trip. :func:`measure_latency` finds the round trip by cross-correlating the
 envelopes of what was played and what came back (envelopes, because a
@@ -182,3 +190,67 @@ def render(renderer, di, sr: int = SR, latency_ms: float | None = None) -> Rende
     return RenderResult(audio=aligned.astype(np.float32), sr=sr, latency_ms=latency,
                         peak_dbfs=lufs.sample_peak_dbfs(rec), clipped=peak >= 0.999,
                         mock=renderer.mock)
+
+
+# -- playing takes: dry and wet in one stream ------------------------------------
+
+#: Dry-to-wet offset inside the unit. Only "a few ms" is known; the fake uses
+#: this guess, the real path measures it per take.
+FAKE_INTERNAL_LATENCY_MS = 3.0
+GUITAR_INPUTS = ("INPUT_1", "INPUT_1_2")
+
+
+@dataclass
+class Take:
+    dry: np.ndarray             # (samples,) Input 1 as played
+    wet: np.ndarray             # (samples, 2) Out 1/2
+    sr: int
+    offset_ms: float | None     # measured wet-after-dry delay
+    mock: bool
+
+    def summary(self) -> dict:
+        return {"seconds": round(len(self.dry) / self.sr, 2), "mock": self.mock,
+                "offset_ms": None if self.offset_ms is None else round(float(self.offset_ms), 1),
+                "dry_peak_dbfs": round(float(lufs.sample_peak_dbfs(self.dry)), 2),
+                "wet_peak_dbfs": round(float(lufs.sample_peak_dbfs(self.wet)), 2)}
+
+
+def _fake_take(fake, seconds: float, sr: int, performance=None):
+    from qcsuite.audio import di as di_mod
+    dry = np.asarray(performance if performance is not None else di_mod.synth_di(seconds, sr),
+                     dtype=np.float64)[: int(seconds * sr)]
+    wet = dsp.process(fake.audible_chain(), dry, sr, fake._catalog_obj, input_ports=GUITAR_INPUTS)
+    delay = int(FAKE_INTERNAL_LATENCY_MS / 1000 * sr)
+    wet = np.vstack([np.zeros((delay, 2)), wet])[: len(dry)]
+    return dry.astype(np.float32), np.clip(wet, -1, 1).astype(np.float32)
+
+
+def _real_take(seconds: float, sr: int):
+    from qctone import audio_io
+    sd = audio_io._sd()
+    device = audio_io.find_device()
+    mapping = [audio_io.DRY_IN_CHANNEL, *audio_io.WET_IN_CHANNELS]
+    rec = sd.rec(int(seconds * sr), samplerate=sr, device=device, mapping=mapping,
+                 dtype="float32", blocking=True)
+    return rec[:, 0].copy(), rec[:, 1:3].copy()
+
+
+def record_take(rig, seconds: float, sr: int = SR, performance=None) -> Take:
+    """Record the player: Input 1 dry and Out 1/2 wet, in one stream.
+
+    ``performance`` (mock only) is the DI the fake "plays"; it defaults to the
+    synthetic riff. Raises when no grid row is fed from Input 1, because the
+    wet side would then be silent or carry something else.
+    """
+    grid = rig.device.grid()
+    if not any(r["in_port"] in GUITAR_INPUTS for r in grid["rows"]):
+        raise RuntimeError(
+            "弾いた音をウェットとして録るには、行の入力が INPUT_1 である必要があります"
+            "(リアンプの後は USB_5 のままのことがあります)。プリセットを呼び出し直すか、"
+            "行の入力を INPUT_1 に戻してください。")
+    if rig.mock:
+        dry, wet = _fake_take(rig.fake, seconds, sr, performance)
+    else:
+        dry, wet = _real_take(seconds, sr)
+    offset = measure_latency(dry, wet, sr, max_ms=50.0)
+    return Take(dry=dry, wet=wet, sr=sr, offset_ms=offset, mock=rig.mock)

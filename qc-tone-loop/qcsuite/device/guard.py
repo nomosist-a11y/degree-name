@@ -36,6 +36,10 @@ FACTORY_ROOT = "/opt/neuraldsp"
 SANDBOX_NAME = "_qcsuite_sandbox"
 SANDBOX_PREFIX = "_qcsuite"
 PROTECTED = ("My Presets", "Favorite", "kami", "Cory Wong")
+#: User setlists the unit holds, My Presets included. Neural DSP's support
+#: page says "up to 12 custom Setlists"; whether My Presets counts among them is
+#: not stated, so the smaller reading is used until the hardware test confirms.
+SETLIST_LIMIT = 12
 OPT_IN = ("Live", "Artist", "Song", "Workshop")
 
 #: Device methods qcsuite never calls: whole-unit I/O, Global EQ, firmware and
@@ -81,6 +85,11 @@ def is_user_folder(key: str) -> bool:
 
 def is_sandbox(key: str) -> bool:
     return is_user_folder(key) and folder_name(key).startswith(SANDBOX_PREFIX)
+
+
+def setlist_limit() -> int:
+    raw = os.environ.get("QCSUITE_SETLIST_LIMIT")
+    return int(raw) if raw else SETLIST_LIMIT
 
 
 def readonly_env() -> bool:

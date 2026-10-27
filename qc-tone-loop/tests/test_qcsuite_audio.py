@@ -153,3 +153,30 @@ def test_render_preset_recipe(rig, di):
     assert not info["excluded"]["excluded"]
     assert info["loudness"]["lufs"] < 0
     assert any(n.kind == "sound_change" for n in rig.device.notices)
+
+
+def test_take_records_dry_and_wet_together(rig, device):
+    device.read_stored("/media/p4/Presets/kami", 4)       # row 0 on INPUT_1
+    take = render.record_take(rig, 3.0)
+    assert take.dry.shape == (3 * SR,) and take.wet.shape == (3 * SR, 2)
+    # The fake's internal delay plus its filters' group delay: a few ms, not 312.
+    assert render.FAKE_INTERNAL_LATENCY_MS <= take.offset_ms < 10
+    assert take.summary()["wet_peak_dbfs"] > -40
+    route_usb(device)                                     # as a reamp leaves it
+    with pytest.raises(RuntimeError, match="INPUT_1"):
+        render.record_take(rig, 1.0)
+
+
+def test_inert_lane_volume_option_keeps_the_level(di):
+    from qcsuite.device import fake as fake_mod
+    from qcsuite.device.session import open_rig
+    f = fake_mod.FakeQuadCortex(fake_mod.FakeConfig(catalog_timeouts=0, first_read_dropped=False,
+                                                    lane_volume_inert=True))
+    with open_rig(mock=True, fake=f) as r:
+        r.device.read_stored("/media/p4/Presets/kami", 4)
+        route_usb(r.device)
+        before = lufs.integrated_loudness(r.render(di).audio, SR)
+        r.device.set_lane_volume_db(0, -20.0)
+        assert r.device.lane_volume_db(0) == pytest.approx(-20.0, abs=0.01)   # reads back
+        after = lufs.integrated_loudness(r.render(di).audio, SR)
+        assert after == pytest.approx(before, abs=0.1)                          # but no effect

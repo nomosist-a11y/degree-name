@@ -87,7 +87,7 @@ def cmd_mock_reset(ctx, a):
 
 def cmd_serve(ctx, a):
     from qcsuite.web.app import serve
-    serve(mock=ctx.mock, allow_folders=ctx.allow_folders, host=a.host, port=a.port,
+    serve(mock=ctx.mock, allow_folders=ctx.allow_folders, port=a.port,
           open_browser=not a.no_browser)
 
 
@@ -133,9 +133,7 @@ def build_parser():
     c.set_defaults(fn=cmd_plan)
     c = sub.add_parser("mock-reset", help="モックの状態を初期化する")
     c.set_defaults(fn=cmd_mock_reset)
-    c = sub.add_parser("serve", help="ローカル Web アプリを起動する")
-    c.add_argument("--host", default="127.0.0.1",
-                   help="既定は 127.0.0.1。LAN に公開すると認証なしで誰でも操作できます")
+    c = sub.add_parser("serve", help="ローカル Web アプリを起動する(127.0.0.1 のみ)")
     c.add_argument("--port", type=int, default=8765)
     c.add_argument("--no-browser", action="store_true")
     c.set_defaults(fn=cmd_serve)
