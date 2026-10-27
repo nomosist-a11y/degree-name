@@ -19,9 +19,12 @@ FLATNESS_LIMIT = 0.08
 #: How close to the DI the third-octave shape must be, as RMS dB over
 #: 100 Hz-5 kHz (the band the player's own scoring used). Above 5 kHz a clean DI
 #: has almost nothing, so the unit's noise floor alone would spoil a full-band
-#: comparison.
-SHAPE_TOLERANCE_DB = 2.0
-CREST_TOLERANCE_DB = 3.0
+#: comparison. A true passthrough is the DI itself (0 dB apart on the fake); a
+#: mild clean amp + cab came within 1.9 dB on the fake, so the tolerances stay
+#: tight. Both are guesses to be checked against a real passthrough render in
+#: the hardware test plan (the self-test prints the numbers).
+SHAPE_TOLERANCE_DB = 1.0
+CREST_TOLERANCE_DB = 1.5
 
 
 def check(render_features: dict, di_features: dict) -> dict:
