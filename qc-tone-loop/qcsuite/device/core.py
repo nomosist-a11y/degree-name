@@ -423,9 +423,8 @@ class Device:
                     step=None, adjust: dict | None = None) -> str | None:
         """Copy a preset. Recalls the source (the sound changes) and drops its tags.
 
-        ``adjust`` edits the recalled grid before it is saved - so far only
-        ``{"lane_db": {row: dB}}``, the row output levels the leveler corrects.
-        The source preset itself is never written.
+        ``adjust`` edits the recalled grid before it is saved (see
+        :meth:`apply_adjust`). The source preset itself is never written.
         """
         with self._lock:
             self.policy.check(dst_key, "コピー")
@@ -434,11 +433,44 @@ class Device:
             occupied = {p["index"] for p in self.presets(dst_key)}
             if to_position in occupied and step is None:
                 raise PlanError("コピー先のスロットが埋まっています。上書きは計画経由でのみ実行できます。")
+            self.check_adjust(adjust)
             p = self.read_stored(src_key, position)
             source_name = p.name if pq.field_present(p, "name") else "copy"
-            for row, db in ((adjust or {}).get("lane_db") or {}).items():
-                self.set_lane_volume_db(int(row), float(db))
+            self.apply_adjust(adjust)
             return self.save_current(dst_key, to_position, name or source_name, step=step)
+
+    ADJUST_KEYS = ("lane_db", "gain_block", "knobs", "patch")
+
+    def check_adjust(self, adjust: dict | None):
+        """Refuse adjustments this code does not know, before anything is recalled."""
+        unknown = set(adjust or {}) - set(self.ADJUST_KEYS)
+        if unknown:
+            raise PlanError(f"未対応の調整: {', '.join(sorted(unknown))}"
+                            "(調整されないまま保存されるのを防ぐため止めました)")
+
+    def apply_adjust(self, adjust: dict | None):
+        """Edit the live grid between a recall and a save.
+
+        ``lane_db``: ``{row: dB}`` row output levels. ``gain_block``: ``{row:
+        {"col", "model_id", "param", "db"}}`` a gain block placed and set in dB.
+        ``knobs``: ``[{"row", "col", "param", "new"}]`` normalized knob values.
+        ``patch``: any qctone patch. Unknown keys are refused.
+        """
+        adjust = adjust or {}
+        self.check_adjust(adjust)
+        for row, db in (adjust.get("lane_db") or {}).items():
+            self.set_lane_volume_db(int(row), float(db))
+        for row, g in (adjust.get("gain_block") or {}).items():
+            self.apply_patch({"note": "gain block", "ops": [
+                {"op": "set_block", "row": int(row), "col": g["col"], "model": g["model_id"]},
+                {"op": "set_param", "row": int(row), "col": g["col"], "param": g["param"],
+                 "real": float(g["db"])}]})
+        if adjust.get("knobs"):
+            self.apply_patch({"note": "knobs", "ops": [
+                {"op": "set_param", "row": int(k["row"]), "col": k["col"], "param": k["param"],
+                 "value": float(k["new"])} for k in adjust["knobs"]]})
+        if adjust.get("patch"):
+            self.apply_patch(adjust["patch"])
 
     def prepare_reamp(self, preset=None) -> list[int]:
         """Point the live grid's guitar-input rows at USB 5 so a reamp reaches them.

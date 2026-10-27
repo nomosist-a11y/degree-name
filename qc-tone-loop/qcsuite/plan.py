@@ -77,6 +77,14 @@ class Step:
             levels = ", ".join(f"行{int(r) + 1} {db:+.1f} dB"
                                for r, db in self.adjust["lane_db"].items())
             text += f"(出力レベルを {levels} に設定)"
+        if self.adjust and self.adjust.get("gain_block"):
+            blocks = ", ".join(f"行{int(r) + 1} 列{g['col'] + 1} {g['db']:+.1f} dB"
+                               for r, g in self.adjust["gain_block"].items())
+            text += f"(Gain ブロックを追加: {blocks})"
+        if self.adjust and self.adjust.get("knobs"):
+            text += f"(ノブ {len(self.adjust['knobs'])} 個を変更)"
+        if self.adjust and self.adjust.get("patch"):
+            text += f"(パッチ {len(self.adjust['patch'].get('ops', []))} 操作を適用)"
         if self.overwrites:
             text += f"(上書き: 「{self.overwrites}」が消えます)"
         if self.note:

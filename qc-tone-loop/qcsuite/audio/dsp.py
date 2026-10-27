@@ -174,11 +174,12 @@ def _delay(x, block, catalog, sr):
     d = max(1, int(p.real("TIME", 350.0) / 1000 * sr))
     fb = min(0.9, p.real("FEEDBACK", 30.0) / 100)
     mix = p.real("MIX", 25.0) / 100
-    a = np.zeros(d + 1)
-    a[0], a[d] = 1.0, -fb
-    b = np.zeros(d + 1)
-    b[d] = 1.0
-    wet = signal.lfilter(b, a, x, axis=0)
+    # wet[n] = x[n - d] + fb * wet[n - d], one delay length at a time (an IIR
+    # filter with a d-long denominator would cost O(N * d)).
+    wet = np.zeros_like(x)
+    for start in range(d, len(x), d):
+        end = min(start + d, len(x))
+        wet[start:end] = x[start - d:end - d] + fb * wet[start - d:end - d]
     return x * (1 - mix * 0.5) + wet * mix
 
 

@@ -93,6 +93,7 @@ class Stored:
     instrument: int = 1
     tags: list = field(default_factory=list)
     taint: dict = field(default_factory=dict)   # cell -> audible override
+    lane_taint: dict | None = None              # row -> audible VOLUME, if inert
 
 
 class FakeQuadCortex:
@@ -470,6 +471,10 @@ class FakeQuadCortex:
                              for i, c in enumerate(p.chains) if len(c.output_control)}
         if not self.config.strings_apply_on_recall:
             self.live_audible.update(copy.deepcopy(stored.taint))
+            if getattr(stored, "lane_taint", None):
+                # Guess: a level that never sounded live does not start sounding
+                # after a save and recall either (same stance as for strings).
+                self.lane_audible.update(stored.lane_taint)
         if count:
             self.audio_interruptions += 1
             entry = (stored.name, key, self.folder_names.get(key, ""), key == data.FACTORY_KEY)
@@ -854,8 +859,9 @@ class FakeQuadCortex:
                 del p.tags[:]                 # a save carries no tags
                 taint = {cell: copy.deepcopy(s) for cell, s in self.live_audible.items()
                          if s.get("passthrough") or s.get("inert_since_host_write")}
+                lane_taint = dict(self.lane_audible) if self.config.lane_volume_inert else None
                 slots[index] = Stored(name=stored_name, preset=p, instrument=int(instrument),
-                                      taint=taint)
+                                      taint=taint, lane_taint=lane_taint)
                 self.dirty = False
             self._file_op(key, apply)
         if not confirm:

@@ -21,11 +21,13 @@ the playing, the row must take its input from INPUT_1 - during a reamp it is
 USB 5 - so a take refuses to start when no row is fed from Input 1.
 
 Alignment: the raw recording starts with qctone's 0.5 s pre-roll plus the round
-trip. :func:`measure_latency` finds the round trip by cross-correlating the
-envelopes of what was played and what came back (envelopes, because a
-distorted render no longer correlates sample-for-sample with its DI), and the
-result is trimmed so sample 0 lines up with the DI's sample 0 - which is what
-stems imported into a DAW need.
+trip. :func:`measure_latency` finds the round trip from the first arrival of
+sound (the first sample within 35 dB of each signal's peak), sharpens it with a
+waveform correlation a few ms either side, and falls back to correlating the
+envelopes when there is no clear onset. The result is trimmed so sample 0
+lines up with the DI's sample 0 - which is what stems imported into a DAW need.
+(Correlating envelopes alone drifted by 30-80 ms on high-gain chains with a
+delay block on the fake, because the repeats pull the peak late.)
 """
 
 from __future__ import annotations
@@ -110,8 +112,31 @@ def _envelope(x, sr, smooth_ms=5.0):
     return signal.lfilter(np.ones(n) / n, [1.0], mono)
 
 
+ONSET_THRESHOLD_DB = -35.0
+
+
+def first_arrival_ms(played, recorded, sr: int) -> float | None:
+    """Delay between the first sample of each signal within 35 dB of its peak."""
+    from qctone.audio_io import onset
+    rec = recorded.mean(axis=1) if np.ndim(recorded) == 2 else recorded
+    a = onset(np.asarray(played, dtype=np.float64), ONSET_THRESHOLD_DB)
+    b = onset(np.asarray(rec, dtype=np.float64), ONSET_THRESHOLD_DB)
+    if a is None or b is None or b < a:
+        return None
+    return (b - a) / sr * 1000
+
+
 def measure_latency(played, recorded, sr: int, max_ms: float = 1500.0) -> float | None:
     """Round trip in ms between ``played`` and ``recorded`` (both start together)."""
+    arrival = first_arrival_ms(played, recorded, sr)
+    if arrival is not None and arrival <= max_ms:
+        lag = _refine(np.asarray(played, dtype=np.float64), np.asarray(recorded, dtype=np.float64),
+                      int(round(arrival / 1000 * sr)), sr, window_ms=3.0)
+        return lag / sr * 1000
+    return _envelope_latency(played, recorded, sr, max_ms)
+
+
+def _envelope_latency(played, recorded, sr: int, max_ms: float) -> float | None:
     a = _envelope(np.asarray(played, dtype=np.float64), sr)
     b = _envelope(np.asarray(recorded, dtype=np.float64), sr)
     if b.max() < 1e-5 or a.max() < 1e-5:

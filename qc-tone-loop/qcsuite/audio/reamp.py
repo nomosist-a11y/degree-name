@@ -65,9 +65,10 @@ def render_preset(rig, folder: str, position: int, di, sr: int,
     stored = device.read_stored(folder, position)
     normalized = presets.normalize(stored, device.catalog, folder=folder, position=position)
     rows = device.prepare_reamp(stored)
-    if not rows:
-        raise RuntimeError(f"「{normalized['name']}」には Input 1/2 から始まる行がないため、"
-                           "USB 5 からリアンプできません。")
+    already = [r["row"] for r in normalized["rows"] if r["in_port"] in ("USB_5", "USB_5_6")]
+    if not rows and not already:
+        raise RuntimeError(f"「{normalized['name']}」には Input 1/2 または USB 5 から始まる行が"
+                           "ないため、リアンプできません。")
     if scene is not None:
         device.switch_scene(scene)
     info = render_current(rig, di, sr, di_features, out_path, fmt)
