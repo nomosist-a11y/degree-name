@@ -107,3 +107,63 @@ next and why, and whether you want them to listen.
   lighter block, or remove one.
 - Never call anything that changes global I/O settings. This tool only edits
   the grid.
+
+# qcsuite - rules for Claude Code
+
+`qcsuite` (in `qcsuite/`) is the everyday toolkit built on the same library:
+preset management, backups, loudness levelling, blind comparisons, sweeps,
+sheets, setlists/MIDI, batch reamps, health checks, an edit watcher. Its web
+app is `qcsuite serve` (127.0.0.1 only). The user guide is
+`docs/user-guide.md`; the hardware test plan is `docs/hardware-test-plan.md`.
+
+## The principle
+
+**The player judges the sound; you do the handling.** Render under identical
+conditions, match loudness, hide names, sort, record, make changes undoable.
+Never tell the player which tone is better, never pick a winner, never
+"tune by numbers" with qcsuite. Feature distances and scores only order things
+for the player to listen to.
+
+## Before anything else
+
+1. Until `docs/hardware-test-plan.md` has been run on this unit, every qcsuite
+   feature is "verified on the mock only". Say so when you report results, and
+   run the plan's first two checks (setlist limit, row output VOLUME audibility)
+   before any write or any loudness levelling.
+2. `--mock` runs against the fake unit (`qcsuite/device/fake.py`). Use it to
+   rehearse a command before running it on the unit. Mock results say nothing
+   about the unit's sound.
+3. Cortex Control must be closed. If qcsuite says the device is in use, another
+   qcsuite/qctone process holds `~/.qctone/device.lock`: ask, don't kill it.
+
+## Safety rules (never relax them on your own)
+
+- Writes go to the sandbox `_qcsuite_sandbox` by default. `My Presets`,
+  `Favorite`, `kami`, `Cory Wong` and the Factory Library are refused by the
+  code; do not look for a way around it. `Live`, `Artist`, `Song`, `Workshop`
+  only with `--allow-folder NAME` when the player asked for that folder.
+- Every write to stored presets is a plan: run it without `--apply` first,
+  read the plan to the player, and add `--apply` only after they agree.
+  Destructive steps back up first; read the backup path out to the player.
+- Reading a stored preset RECALLS it: the unit's sound changes and unsaved
+  edits on the unit are lost. Warn before backups, levelling, batch reamps and
+  anything that loads presets one by one.
+- Before anything that reamps, ask the player to turn monitors and headphones
+  down.
+- Never call whole-unit settings (I/O, Global EQ, master volume, firmware), and
+  never answer the unit's capture dialog.
+- Known non-effects from the computer (measured on this unit): capture
+  `file_name` and the capture block's knobs, string parameters such as a cab's
+  mic, unowned plugin blocks (Plini, Gojira, Nolly, Petrucci, John Mayer,
+  Rabea, Misha, Tim Henson, Fortin, Soldano SLO-100 X). They read back fine and
+  do not sound. Do not present results that depend on them as real; qcsuite
+  flags and excludes such renders.
+- Writes are not retried blindly: the unit answers most writes with silence.
+  Confirm by reading back (`qcsuite library list`, `qcsuite status`).
+
+## When something fails
+
+Record it, stop, and ask. Do not edit the safety rules, the fake unit or the
+tests to make a hardware result "pass". If the unit behaves differently from
+the mock, the mock is wrong: write down what the unit did (numbers, messages)
+for the player, and propose the change to `qcsuite/device/fake.py` separately.
