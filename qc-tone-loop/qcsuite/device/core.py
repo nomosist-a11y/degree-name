@@ -237,6 +237,7 @@ class Device:
         """Writes that will read back fine but not change the sound."""
         cells = {(b["row"], b["col"]): b["model_id"] for b in grid["blocks"]}
         out = []
+        capture_knobs: dict = {}
         for op in ops:
             if op["op"] == "set_block":
                 cells[(op["row"], op["col"])] = op["model_id"]
@@ -250,8 +251,10 @@ class Device:
             elif op["op"] in ("set_param", "set_option"):
                 model_id = cells.get((op["row"], op["col"]))
                 if model_id in CAPTURE_MODELS:
-                    out.append(f"行{op['row'] + 1} 列{op['col'] + 1}: キャプチャーブロックの "
-                               f"{op['param']} はパソコンから書いても音に反映されません。")
+                    capture_knobs.setdefault((op["row"], op["col"]), []).append(op["param"])
+        for (row, col), names in capture_knobs.items():
+            out.append(f"行{row + 1} 列{col + 1}: キャプチャーブロックのパラメーター"
+                       f"({', '.join(names)})は、パソコンから書いても音に反映されません。")
         return out
 
     def place_block(self, row: int, col: int, model_id: int) -> dict:
