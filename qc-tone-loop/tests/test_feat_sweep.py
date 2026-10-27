@@ -174,9 +174,6 @@ def test_sensitivity_map(rig, tmp_path):
 
 
 def test_send_to_tournament(rig):
-    from qcsuite.features import tournament
-    if not hasattr(tournament, "create"):
-        pytest.skip("tournament.create はまだ実装されていない(別フォークが作業中)")
     # Driven settings: on the fake, very clean ones sit near the passthrough threshold.
     job, _ = _run(rig, _spec(cells=[{"row": 0, "col": 1, "params": {"gain": [0.6, 0.8, 0.95]}}]))
     result = sweep.to_tournament(job, True, top=3)
