@@ -52,7 +52,7 @@ qcsuite はクラウド環境で、モック(FakeQuadCortex)だけを相手に�
 
 | 項目 | 内容 |
 |---|---|
-| 背景 | Neural DSP のサポート情報では「カスタムのセットリストは最大 12 個」。My Presets を数に含むかどうかは書かれていない。qcsuite は小さいほうの読み方(My Presets を含めて 12 個)で止まるようにしてある |
+| 背景 | Neural DSP のサポート情報([Receiving MIDI Program Change messages](https://support.neuraldsp.com/help/incoming-midi)、検索結果の要約で確認)では「カスタムのセットリストは最大 12 個」で、CC#32 でセットリストを選ぶ。ただし同じページの一覧は 0〜6 までしか載っておらず、数が一致しない。My Presets を数に含むかどうかも書かれていない。qcsuite は小さいほうの読み方(My Presets を含めて 12 個)で止まるようにしてある |
 | 実行 | `qcsuite library usage` で今の数を見る(8 個のはず)。本体のマニュアルか画面で、上限を確認する |
 | 期待 | フォルダ 8 個 + sandbox 1 個 = 9 個が、上限以内 |
 | 余裕がないとき | **sandbox を作らずに止まる**(qcsuite も止まります)。手順 3 と 4 の書き込みは行わない |
