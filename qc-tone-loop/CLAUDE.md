@@ -83,8 +83,11 @@ Activate the venv first: `source .venv/bin/activate`.
    the best score. In that case, propose a structural change (different
    amp/cab) or ask the player for direction.
 8. Save only on the player's explicit go-ahead:
-   `qctone save NAME --slot 30A --title "..."` (this overwrites that User
-   slot, so confirm the slot is free or unwanted).
+   `qctone save NAME --slot 30A --title "..."`. It saves into an EMPTY slot of
+   the sandbox `_qcsuite_sandbox` (or `--folder Live|Artist|Song|Workshop`);
+   the player's own folders are refused and occupied slots are never
+   overwritten (qcsuite's safety rules). The player moves the result into
+   their own folder on the unit if they want it there.
 
 ## Logic Pro route (optional)
 

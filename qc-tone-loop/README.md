@@ -63,7 +63,7 @@ Claude Codeは `CLAUDE.md` の手順に従って、`qctone init`、`record-di`�
 | `qctone import NAME bounce.wav` | Logic Proで書き出した音を解析する |
 | `qctone feedback NAME "..."` | 聴いた感想を記録する |
 | `qctone restore NAME [--iter N]` | 以前の状態に戻す |
-| `qctone save NAME --slot 30A --title "..."` | User Presetに保存する(上書き) |
+| `qctone save NAME --slot 30A --title "..."` | sandbox(`_qcsuite_sandbox`)の空きスロットに保存する。自分のフォルダへの保存と上書きはしない |
 
 ## 注意
 
