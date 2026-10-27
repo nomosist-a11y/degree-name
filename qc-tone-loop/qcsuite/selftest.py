@@ -80,13 +80,15 @@ class Run:
         return self.rig.device
 
     def ask(self, question: str, default_yes: bool = True) -> bool:
-        if self.mock or self.ctx.yes:
+        # On the unit every question is asked, --yes or not: these confirm writes,
+        # deletions and what the player heard.
+        if self.mock:
             return default_yes
         answer = input(f"{question} [y/n]: ").strip().lower()
         return answer in ("y", "yes", "はい")
 
     def ask_text(self, question: str, default: str) -> str:
-        if self.mock or self.ctx.yes:
+        if self.mock:
             return default
         answer = input(f"{question} [{default}]: ").strip()
         return answer or default
@@ -135,7 +137,9 @@ def s_baseline(run: Run):
               if counts.get(n) != want}
     detail = json.dumps(counts, ensure_ascii=False)
     if sandbox_left:
-        return FAIL, f"前回の sandbox が残っています: {sandbox_left}。{detail}"
+        # Kept as it is: it may hold copies the player wants. The run writes into
+        # free slots only and does not delete a folder it did not create.
+        return INFO, f"既存の sandbox を使います(最後に削除しません): {sandbox_left}。{detail}"
     return (PASS if not differ else INFO), detail + (f" 想定との違い: {differ}" if differ else "")
 
 
@@ -285,8 +289,10 @@ def s_latency_passthrough(run: Run):
       "_qcsuite_sandbox ができ、0/256 で一覧に出る",
       "上限に余裕がないと止まる(手順 3 の結果を確認)", writes=True)
 def s_sandbox(run: Run):
+    existed = guard.folder_key(guard.SANDBOX_NAME) in {f["key"] for f in run.device.setlists()}
     key = run.device.ensure_sandbox()
     run.state["sandbox"] = key
+    run.state["created_sandbox"] = not existed
     room = run.device.setlist_room()
     listed = next(f for f in run.device.setlists() if f["key"] == key)
     return PASS, f"{key}: {listed['occupied']}/{listed['slots']}、フォルダ {room['user_folders']} 個"
@@ -296,17 +302,15 @@ def s_sandbox(run: Run):
       "My Presets / Favorite / kami / Cory Wong / Factory への保存・コピーは、何も送らずに拒否される",
       "拒否されなかったら直ちに止めて報告(安全ルールの不具合)", writes=True)
 def s_refusals(run: Run):
+    # Only the policy is asked: if the guard were ever broken, a real save here
+    # would write into the player's folders on the unit.
     from qcsuite.errors import WriteRefused
     refused = []
-    for name in ("My Presets", "Favorite", "kami", "Cory Wong"):
+    for name in ("My Presets", "Favorite", "kami", "Cory Wong", FACTORY):
         try:
-            run.device.save_current(guard.folder_key(name), 255, "qcsuite should refuse")
+            run.device.policy.check(guard.folder_key(name), "保存")
         except WriteRefused:
-            refused.append(name)
-    try:
-        run.device.save_current(FACTORY, 255, "x")
-    except WriteRefused:
-        refused.append("Factory Library")
+            refused.append(guard.folder_name(guard.folder_key(name)))
     ok = len(refused) == 5
     return (PASS if ok else FAIL), f"拒否: {refused}"
 
@@ -317,15 +321,20 @@ def s_refusals(run: Run):
 def s_copy_dedup(run: Run):
     key = run.state.get("sandbox") or run.device.ensure_sandbox()
     entry = run.device.presets(guard.folder_key("kami"))[0]
+    taken = {p["index"] for p in run.device.presets(key)}
+    free = [i for i in range(256) if i not in taken][:2]
     plan = plan_mod.Plan("selftest copy", steps=[
-        plan_mod.Step("copy", key, position=0, name=entry["name"],
+        plan_mod.Step("copy", key, position=free[0], name=entry["name"],
                       source={"folder": guard.folder_key("kami"), "position": entry["index"]}),
-        plan_mod.Step("copy", key, position=1, name=entry["name"],
+        plan_mod.Step("copy", key, position=free[1], name=entry["name"],
                       source={"folder": guard.folder_key("kami"), "position": entry["index"]})])
     result = plan_mod.execute(plan, run.device, confirm=True)
     names = [r["stored_name"] for r in result["results"]]
+    # With an existing sandbox the first copy may already be renamed; the rule
+    # checked is the unit's: base cut to fit 20 characters, then _N.
+    ok = guard.name_matches(entry["name"], names[0]) and guard.name_matches(entry["name"], names[1]) \
+        and names[0] != names[1] and len(names[1]) <= 20
     expected_second = (entry["name"][:18] + "_1") if len(entry["name"]) > 18 else entry["name"] + "_1"
-    ok = names[0] == entry["name"] and names[1] == expected_second
     return (PASS if ok else FAIL), f"保存名: {names}(2 回目の想定 {expected_second!r})"
 
 
@@ -354,8 +363,9 @@ def s_restore(run: Run):
 def s_cleanup(run: Run):
     device = run.device
     folders = {f["name"]: f for f in device.setlists()}
+    # Only the sandbox this run created; one that was there before is the player's.
     steps = [plan_mod.Step("delete_folder", f["key"]) for name, f in folders.items()
-             if name.startswith(guard.SANDBOX_PREFIX)]
+             if name == guard.SANDBOX_NAME and run.state.get("created_sandbox")]
     if steps:
         plan = plan_mod.Plan("selftest cleanup", steps=steps)
         print(plan.render())
@@ -365,11 +375,14 @@ def s_cleanup(run: Run):
     deadline = time.monotonic() + (60 if not run.mock else 1)
     while True:
         after = _user_folders(device)
-        if not any(n.startswith(guard.SANDBOX_PREFIX) for n in after) or time.monotonic() > deadline:
+        if not steps or guard.SANDBOX_NAME not in after or time.monotonic() > deadline:
             break
         time.sleep(2)
     baseline = run.state.get("baseline") or EXPECTED_COUNTS
-    ok = after == baseline
+    # A sandbox that existed before keeps the copies made in this run.
+    ok = {n: c for n, c in after.items() if not n.startswith(guard.SANDBOX_PREFIX)} == \
+        {n: c for n, c in baseline.items() if not n.startswith(guard.SANDBOX_PREFIX)} and \
+        set(after) == set(baseline)
     return (PASS if ok else FAIL), f"開始時 {json.dumps(baseline, ensure_ascii=False)} / 終了時 {json.dumps(after, ensure_ascii=False)}"
 
 
@@ -423,10 +436,12 @@ def s_backup(run: Run):
     latest = backup.load_latest(run.mock)
     run.state["backup_items"] = latest
     expected = run.state.get("baseline", {}).get(folder)
-    ok = result["commit"] is not None and result["failed"] == 0 and \
-        (expected is None or result["files"] == expected)
+    # No commit is fine when nothing changed since the last backup.
+    ok = result["failed"] == 0 and (expected is None or result["files"] == expected) and \
+        backup.has_commits(run.mock)
+    commit = str(result["commit"])[:8] if result["commit"] else "なし(前回から変更なし)"
     return (PASS if ok else FAIL), (f"{result['files']} 件、失敗 {result['failed']} 件、"
-                                    f"コミット {str(result['commit'])[:8]}、ジョブ {job.id}")
+                                    f"コミット {commit}、ジョブ {job.id}")
 
 
 @step("2 読み取り", "健康診断と資料(バックアップから、読み込みなし)",
