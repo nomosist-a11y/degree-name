@@ -274,11 +274,16 @@ class Device:
                     return {"placed": True, "refused_but_placed": True}
                 raise
 
-    def set_capture(self, row: int, col: int, capture: dict, model: int = 14000) -> dict:
-        """Point a capture block at a library capture. Reads back; does NOT sound."""
+    def set_capture(self, row: int, col: int, capture: dict, model: int | None = 14000) -> dict:
+        """Point a capture block at a library capture. Reads back; does NOT sound.
+
+        ``model=None`` re-points the capture block already in the cell instead of
+        placing a new one.
+        """
         entry = type("CaptureEntry", (), {"key": capture["key"], "name": capture["name"]})
         with self._lock:
-            self.place_block(row, col, model)
+            if model is not None:
+                self.place_block(row, col, model)
             self.qc.set_capture(row, col, entry, model=None)
         message = (f"行{row + 1} 列{col + 1} に「{capture['name']}」を書き込みました。読み戻しは正しく"
                    "見えますが、パソコンから読み込んだキャプチャーは音に反映されません。"
