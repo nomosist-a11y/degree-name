@@ -49,7 +49,24 @@ def _qc():
 
 @contextmanager
 def connect():
-    """Open the unit. Fails while Cortex Control holds the USB link."""
+    """Open the unit under qcsuite's device lock (one tool at a time).
+
+    Fails while Cortex Control holds the USB link, and while another qctone or
+    qcsuite process is using the unit.
+    """
+    from qcsuite import paths
+    from qcsuite.device.lock import device_lock
+    from qcsuite.errors import DeviceBusy
+    try:
+        with device_lock(paths.lock_file(False), what="qctone"):
+            with _connect() as qc:
+                yield qc
+    except DeviceBusy as exc:
+        raise SystemExit(str(exc)) from None
+
+
+@contextmanager
+def _connect():
     pq = _qc()
     try:
         qc = pq.connect()
@@ -284,10 +301,21 @@ def restore_ops(saved: dict, current: dict) -> dict:
     return {"note": "restore", "ops": ops}
 
 
-def save(qc, slot: str, name: str) -> str:
-    """Save the live grid into a User setlist slot (overwrites it)."""
+def save(qc, slot: str, name: str, folder: str | None = None) -> str:
+    """Save the live grid into an EMPTY slot of the sandbox (or an allowed folder).
+
+    qcsuite's safety rules apply here too: the player's own folders (My
+    Presets, Favorite, kami, Cory Wong) are never written, an occupied slot is
+    never overwritten from this command, and the stored name is read back.
+    Overwrites go through ``qcsuite`` plans, which back up first.
+    """
+    from qcsuite.device import guard
+    from qcsuite.device.core import Device
     pq = _qc()
-    return qc.save_current_preset(pq.Setlist.USER, slot, name, confirm=True)
+    device = Device(qc, mock=False, policy=guard.WritePolicy(
+        allowed={folder} if folder and not guard.is_sandbox(guard.folder_key(folder)) else set()))
+    key = device.ensure_sandbox() if not folder else guard.folder_key(folder)
+    return device.save_current(key, pq.slot_to_position(slot), name)
 
 
 def catalog_listing(catalog, search: str | None = None, category: str | None = None):

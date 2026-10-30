@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qcsuite 健康診断</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h2>健康診断とライブ前チェック</h2>
+  <p class="small muted">USB 入力のまま保存されたプリセット、Out 1/2 に届かない行、ミュート、未所有プラグインなど、
+    ステージで困ることを一覧にします。バックアップから診断すれば本体の音は変わりません。音の良し悪しは診断しません。</p>
+  <div id="jobbox"></div>
+  <section class="panel">
+    <h3>診断する</h3>
+    <div class="row">
+      <label><input type="radio" name="src" value="backup" checked> バックアップ(本体は読み込まない)</label>
+      <label><input type="radio" name="src" value="current"> 現在のグリッド</label>
+      <label><input type="radio" name="src" value="folder"> フォルダ(読み込みあり)</label>
+      <label><input type="radio" name="src" value="refs"> フォルダ:スロット</label>
+    </div>
+    <div class="row">
+      <select id="folder"></select>
+      <input id="refs" placeholder="例: My Presets:1G, kami:1E" size="28">
+      <button class="primary" id="btnScan">診断</button>
+      <a class="btn" href="/api/health/last.md" target="_blank">前回の結果(Markdown)</a>
+    </div>
+    <p class="small muted">「フォルダ」は、バックアップに無いプリセットを本体に 1 つずつ読み込みます(音が切り替わります)。
+      DSP とレベルのしきい値は目安です。</p>
+  </section>
+  <section class="panel">
+    <h3>結果</h3>
+    <div id="summary" class="small muted">まだ診断していません。</div>
+    <div id="report"></div>
+  </section>
+  <section class="panel">
+    <h3>ライブ前チェック</h3>
+    <div class="row">セットリスト <select id="gigName"></select>
+      <label><input type="checkbox" id="noRead" checked> バックアップに無いものは読み込まない</label>
+      <button class="primary" id="btnGig">チェック</button></div>
+    <div id="gig"></div>
+  </section>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/health.js"></script>
+</body>
+</html>

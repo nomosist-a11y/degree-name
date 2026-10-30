@@ -1,13 +1,16 @@
 [project]
 name = "qctone"
-version = "0.1.0"
-description = "Quad Cortex tone-matching loop: target -> edit grid over USB -> reamp -> analyze -> repeat"
+version = "0.2.0"
+description = "Quad Cortex tools over USB: the qctone tone-matching loop and the qcsuite everyday toolkit"
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.26",
     "scipy>=1.11",
     "soundfile>=0.12",
     "matplotlib>=3.8",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -15,14 +18,23 @@ device = [
     "pyquadcortex==0.40.0",
     "sounddevice>=0.4.6",
 ]
-dev = ["pytest>=8"]
+claude = ["anthropic>=0.40"]
+dev = ["pytest>=8", "httpx>=0.27"]
 
 [project.scripts]
 qctone = "qctone.cli:main"
+qcsuite = "qcsuite.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["qctone"]
+packages = ["qctone", "qcsuite", "qcsuite.device", "qcsuite.audio", "qcsuite.features",
+            "qcsuite.web", "qcsuite.web.routes"]
+
+[tool.setuptools.package-data]
+qcsuite = ["web/static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
