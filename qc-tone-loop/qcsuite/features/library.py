@@ -237,6 +237,143 @@ def copy_plan(device, items: list[dict], to: str | None = None,
                          steps=steps, warnings=warnings)
 
 
+# -- grafting blocks from one preset into another -------------------------------------------
+
+GRAFT_KINDS = ("amp", "cab")
+
+
+def block_kind(block: dict) -> str | None:
+    """``"amp"`` (amps and captures), ``"cab"`` (cab sims) or None."""
+    category = block.get("category") or ""
+    if block.get("model_id") in inert.CAPTURE_MODELS or "Amplifier" in category:
+        return "amp"
+    if category.startswith("Cabsim"):
+        return "cab"
+    return None
+
+
+def _cell(text: str) -> tuple[int, int]:
+    """``"1,3"`` (row, column as the unit shows them, 1-based) -> ``(0, 2)``."""
+    try:
+        row, col = (int(x) for x in text.split(","))
+    except ValueError:
+        raise QcsuiteError(f"セルは「行,列」(1 始まり)で指定してください: {text}") from None
+    return row - 1, col - 1
+
+
+def _pairs(donor: dict, target: dict, kinds, pairs: list[str] | None) -> list[tuple[dict, dict]]:
+    """Which donor block goes into which target cell."""
+    def at(n, cell, what):
+        hit = next((b for b in n["blocks"] if (b["row"], b["col"]) == cell), None)
+        if hit is None:
+            raise QcsuiteError(f"{what}の 行{cell[0] + 1} 列{cell[1] + 1} にブロックがありません。")
+        return hit
+
+    if pairs:
+        out = []
+        for p in pairs:
+            if "=" not in p:
+                raise QcsuiteError(f"--pair は「元の行,列=先の行,列」で指定してください: {p}")
+            d, t = p.split("=", 1)
+            out.append((at(donor, _cell(d), "元のプリセット"), at(target, _cell(t), "組み込み先")))
+        return out
+    out = []
+    for kind in kinds:
+        ds = [b for b in donor["blocks"] if block_kind(b) == kind]
+        ts = [b for b in target["blocks"] if block_kind(b) == kind]
+        if len(ds) != 1 or len(ts) != 1:
+            def cells(bs):
+                return "、".join(f"{b['row'] + 1},{b['col'] + 1} {b['model']}" for b in bs) or "なし"
+            raise QcsuiteError(
+                f"{kind} が 1 つに決まりません(元: {cells(ds)} / 先: {cells(ts)})。"
+                "--pair 元の行,列=先の行,列 で指定してください。")
+        out.append((ds[0], ts[0]))
+    return out
+
+
+def graft_ops(pairs: list[tuple[dict, dict]]) -> tuple[list[dict], list[dict], list[str]]:
+    """``(patch ops, string writes, warnings)`` putting each donor block in its target cell.
+
+    The target cell's bypass is not written: a block placed with ``set_block``
+    takes over the cell's bypass table, so the target's per-scene on/off stays
+    as it was (measured on the player's unit for new blocks; the mock does the
+    same).
+    """
+    ops, texts, warnings = [], [], []
+    for d, t in pairs:
+        where = f"行{t['row'] + 1} 列{t['col'] + 1}"
+        ops.append({"op": "set_block", "row": t["row"], "col": t["col"], "model": d["model_id"]})
+        if t["model_id"] != d["model_id"]:
+            warnings.append(f"{where}: {t['model']} を {d['model']} に置き換えます。")
+        if any(e.get("scenes") for e in t["params"].values()):
+            warnings.append(f"{where}: 元の {t['model']} にあったシーンごとのノブの値はなくなります"
+                            "(シーンごとのオン/オフは残ります)。")
+        if d.get("inert_plugin"):
+            warnings.append(f"{where} {d['model']}: 未所有のプラグインなので音は素通しです。")
+        if d["model_id"] in inert.CAPTURE_MODELS:
+            warnings.append(f"{where}: キャプチャー「{d.get('capture', '?')}」は、本体の画面で"
+                            "読み込み直すまで鳴りません。")
+        for name, entry in d["params"].items():
+            base = name.split("#")[0]
+            if "text" in entry:
+                if entry["text"]:
+                    texts.append({"row": t["row"], "col": t["col"], "index": entry["index"],
+                                  "text": entry["text"]})
+                continue
+            if entry.get("value") is None:
+                continue
+            if entry.get("scenes") and len({v for v in entry["scenes"] if v is not None}) > 1:
+                warnings.append(f"{where} {base}: 元ではシーンごとに値が違います。シーン A の値で書きます。")
+            if "option" in entry:
+                if isinstance(entry["option"], str):
+                    ops.append({"op": "set_option", "row": t["row"], "col": t["col"],
+                                "param": base, "option": entry["option"]})
+                else:
+                    warnings.append(f"{where} {base}: 選択肢の名前が不明なので書きません。")
+                continue
+            ops.append({"op": "set_param", "row": t["row"], "col": t["col"], "param": base,
+                        "value": float(min(1.0, max(0.0, entry["value"])))})
+        if d.get("mic") or d.get("ir"):
+            warnings.append(f"{where}: マイク/IR「{d.get('mic') or d.get('ir')}」は書き込みますが、"
+                            "パソコンからでは音に反映されません。保存後に本体でキャブのブロックを開き、"
+                            "同じマイクを選び直して本体で保存してください。")
+    return ops, texts, warnings
+
+
+def graft_plan(device, donor: dict, target: dict, donor_n: dict, target_n: dict, *,
+               kinds=GRAFT_KINDS, pairs: list[str] | None = None, to: str | None = None,
+               name: str | None = None) -> plan_mod.Plan:
+    """Copy ``target`` with ``donor``'s blocks (default: its amp and cab) in place.
+
+    The target's scenes, bypass per scene, other blocks and routing stay as they
+    are; neither stored preset is written. The result goes to the sandbox (or
+    an allowed folder) as one copy step whose ``adjust`` swaps the blocks.
+    """
+    ops, texts, warnings = graft_ops(_pairs(donor_n, target_n, kinds, pairs))
+    names = {f"{target['folder']}#{target['position']}": name} if name else None
+    plan = copy_plan(device, [target], to, names)
+    copy = next(s for s in plan.steps if s.action == "copy")
+    copy.adjust = {"patch": {"note": f"graft from {donor['name']}", "ops": ops}, "texts": texts}
+    copy.note += f" + 「{guard.folder_name(donor['folder'])}」{donor['slot']} {donor['name']} の" \
+                 f"ブロック {sum(1 for o in ops if o['op'] == 'set_block')} 個"
+    plan.title = f"組み込み: {donor['name']} → {target['name']} のコピー"
+    plan.warnings = warnings + plan.warnings
+    return plan
+
+
+def read_normalized(device, ref: dict, allow_load: bool) -> tuple[dict, str]:
+    """A listed preset's content: from the latest backup, else by recalling it."""
+    n = backup.latest_by_key(device.mock).get((ref["folder"], ref["position"]))
+    if n is not None:
+        return n, "backup"
+    if not allow_load:
+        raise QcsuiteError(f"「{ref['name']}」はバックアップにありません。--load で本体に読み込むか"
+                           "(音が切り替わります)、先にバックアップしてください。")
+    stored = device.read_stored(ref["folder"], ref["position"])
+    return presets.normalize(stored, device.catalog, folder=ref["folder"],
+                             position=ref["position"]), "load"
+
+
 # -- looking inside -------------------------------------------------------------------------
 
 def _view(n: dict, source: str, **extra) -> dict:
@@ -486,8 +623,31 @@ def cmd_copy(ctx, a):
             raise QcsuiteError("--rename は 1 件をコピーするときだけ使えます。")
         plan = copy_plan(rig.device, items, a.to, names)
         result = ctx.run_plan(plan, rig.device, apply=a.apply)
-    stored = [r.get("stored_name") for r in result.get("results", []) if r.get("stored_name")]
+    stored = [r["stored_name"] for r in result.get("results", [])
+              if r.get("action") == "copy" and r.get("stored_name")]
     ctx.out(result, "" if result.get("dry_run") else "コピーしました: " + "、".join(stored))
+
+
+def cmd_graft(ctx, a):
+    if a.load:
+        print(f"注意: バックアップに無いプリセットは本体に読み込んで中身を調べます。{LOAD_WARNING}",
+              file=sys.stderr)
+        if not ctx.ask("読み込んでもよいですか?"):
+            return
+    kinds = tuple(k.strip() for k in a.blocks.split(",") if k.strip())
+    if not a.pair and set(kinds) - set(GRAFT_KINDS):
+        raise QcsuiteError(f"--blocks は {', '.join(GRAFT_KINDS)} から選んでください。")
+    with ctx.rig("library graft") as rig:
+        donor = resolve(rig.device, a.donor)
+        target = resolve(rig.device, a.target)
+        donor_n, _ = read_normalized(rig.device, donor, a.load)
+        target_n, _ = read_normalized(rig.device, target, a.load)
+        plan = graft_plan(rig.device, donor, target, donor_n, target_n, kinds=kinds,
+                          pairs=a.pair, to=a.to, name=a.name)
+        result = ctx.run_plan(plan, rig.device, apply=a.apply)
+    stored = [r["stored_name"] for r in result.get("results", [])
+              if r.get("action") == "copy" and r.get("stored_name")]
+    ctx.out(result, "" if result.get("dry_run") else "保存しました: " + "、".join(stored))
 
 
 def cmd_show(ctx, a):
@@ -582,6 +742,19 @@ def add_cli(sub):
     c.add_argument("--rename", help="新しい名前(1 件のときだけ)")
     c.add_argument("--apply", action="store_true", help="実行する(省略時は計画の表示だけ)")
     c.set_defaults(fn=cmd_copy)
+    c = s.add_parser("graft", help="別のプリセットのアンプとキャブを、シーンはそのままでコピーに組み込む"
+                                   "(計画を表示、--apply で実行)")
+    c.add_argument("donor", help="ブロックを取ってくるプリセット(例 kami:2E)")
+    c.add_argument("target", help="シーンの仕組みを使うプリセット(例 kami:2H)。元は変更しない")
+    c.add_argument("--blocks", default="amp,cab", help="組み込むブロック(amp,cab / amp / cab)")
+    c.add_argument("--pair", action="append", metavar="行,列=行,列",
+                   help="元のセル=組み込み先のセル(1 始まり)。自動で決まらないとき。複数可")
+    c.add_argument("--to", help="保存先(既定: sandbox。他は --allow-folder が必要)")
+    c.add_argument("--name", help="保存する名前(既定: 組み込み先の名前)")
+    c.add_argument("--load", action="store_true",
+                   help="バックアップに無いプリセットは本体に読み込んで調べる(音が切り替わる)")
+    c.add_argument("--apply", action="store_true", help="実行する(省略時は計画の表示だけ)")
+    c.set_defaults(fn=cmd_graft)
     c = s.add_parser("show", help="チェーンとノブを表示(既定はバックアップから)")
     c.add_argument("ref", nargs="?", help="「フォルダ/1A」か「フォルダ/名前」")
     c.add_argument("--load", action="store_true", help="本体に読み込んで表示(音が切り替わる)")

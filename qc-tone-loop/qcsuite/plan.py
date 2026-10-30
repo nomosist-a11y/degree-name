@@ -85,6 +85,8 @@ class Step:
             text += f"(ノブ {len(self.adjust['knobs'])} 個を変更)"
         if self.adjust and self.adjust.get("patch"):
             text += f"(パッチ {len(self.adjust['patch'].get('ops', []))} 操作を適用)"
+        if self.adjust and self.adjust.get("texts"):
+            text += f"(文字列 {len(self.adjust['texts'])} 件を書き込み)"
         if self.overwrites:
             text += f"(上書き: 「{self.overwrites}」が消えます)"
         if self.note:

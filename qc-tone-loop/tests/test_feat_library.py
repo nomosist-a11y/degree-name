@@ -206,3 +206,59 @@ def test_web_library(client):
     loaded = client.post("/api/library/load", json={"folder": f"{USER}/kami", "position": 4}).json()
     assert loaded["preset"]["name"] == "Brit 2203"
     assert client.get("/static/library.html").status_code == 200
+
+
+# -- grafting --------------------------------------------------------------------------------
+
+def _norm(device, key, position):
+    from qcsuite import presets
+    return presets.normalize(device.read_stored(key, position), device.catalog)
+
+
+def test_graft_swaps_amp_and_cab_and_keeps_the_scene_system(device, fake):
+    kami = f"{USER}/kami"
+    donor = library.resolve(device, "kami/Wide Brit Shred")
+    target = library.resolve(device, "kami/Laney test")
+    d, _ = library.read_normalized(device, donor, allow_load=True)
+    t, _ = library.read_normalized(device, target, allow_load=True)
+    plan = library.graft_plan(device, donor, target, d, t)
+    assert [s.action for s in plan.steps] == ["create_folder", "copy"]
+    assert any("マイク" in w for w in plan.warnings)
+    assert plan_mod.execute(plan, device)["dry_run"] and SANDBOX not in fake.folders
+    plan_mod.execute(plan, device, confirm=True)
+    out = _norm(device, SANDBOX, plan.steps[1].position)
+    by_kind = {library.block_kind(b): b for b in out["blocks"] if library.block_kind(b)}
+    donor_kinds = {library.block_kind(b): b for b in d["blocks"] if library.block_kind(b)}
+    for kind in ("amp", "cab"):
+        assert by_kind[kind]["model_id"] == donor_kinds[kind]["model_id"]
+    # Everything else, the per-scene bypass included, is the target's.
+    rest = [(b["row"], b["col"], b["model_id"], b["bypass"]) for b in out["blocks"]
+            if not library.block_kind(b)]
+    assert rest == [(b["row"], b["col"], b["model_id"], b["bypass"]) for b in t["blocks"]
+                    if not library.block_kind(b)]
+    cells = {(b["row"], b["col"]): b["bypass"] for b in t["blocks"]}
+    assert all(b["bypass"] == cells[(b["row"], b["col"])] for b in out["blocks"])
+    assert out["scene_labels"] == t["scene_labels"]
+    mic = donor_kinds["cab"].get("mic")
+    assert mic is None or by_kind["cab"].get("mic") == mic        # written, though inert
+    for ref, n in ((donor, d), (target, t)):                       # neither source is written
+        assert _norm(device, kami, ref["position"])["fingerprint"] == n["fingerprint"]
+
+
+def test_graft_needs_pairs_when_ambiguous_and_refuses_protected_targets(device):
+    donor = library.resolve(device, "kami/Wide Brit Shred")
+    target = library.resolve(device, "kami/Laney test")
+    d, _ = library.read_normalized(device, donor, allow_load=True)
+    t, _ = library.read_normalized(device, target, allow_load=True)
+    t2 = {**t, "blocks": t["blocks"] + [dict(b, col=b["col"] + 5) for b in t["blocks"]
+                                        if library.block_kind(b) == "amp"]}
+    with pytest.raises(QcsuiteError, match="--pair"):
+        library.graft_plan(device, donor, target, d, t2)
+    amp = next(b for b in d["blocks"] if library.block_kind(b) == "amp")
+    tamp = next(b for b in t["blocks"] if library.block_kind(b) == "amp")
+    plan = library.graft_plan(device, donor, target, d, t,
+                              pairs=[f"{amp['row'] + 1},{amp['col'] + 1}="
+                                     f"{tamp['row'] + 1},{tamp['col'] + 1}"])
+    assert sum(o["op"] == "set_block" for o in plan.steps[-1].adjust["patch"]["ops"]) == 1
+    with pytest.raises(WriteRefused):
+        plan_mod.execute(library.graft_plan(device, donor, target, d, t, to="kami"), device)

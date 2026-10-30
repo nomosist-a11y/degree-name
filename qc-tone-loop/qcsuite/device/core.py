@@ -478,7 +478,7 @@ class Device:
             self.apply_adjust(adjust)
             return self.save_current(dst_key, to_position, name or source_name, step=step)
 
-    ADJUST_KEYS = ("lane_db", "gain_block", "knobs", "patch")
+    ADJUST_KEYS = ("lane_db", "gain_block", "knobs", "patch", "texts")
 
     def check_adjust(self, adjust: dict | None):
         """Refuse adjustments this code does not know, before anything is recalled."""
@@ -493,7 +493,9 @@ class Device:
         ``lane_db``: ``{row: dB}`` row output levels. ``gain_block``: ``{row:
         {"col", "model_id", "param", "db"}}`` a gain block placed and set in dB.
         ``knobs``: ``[{"row", "col", "param", "new"}]`` normalized knob values.
-        ``patch``: any qctone patch. Unknown keys are refused.
+        ``patch``: any qctone patch. ``texts``: ``[{"row", "col", "index", "text"}]``
+        string parameters, written after the patch (they read back but do not sound
+        until loaded on the unit's screen). Unknown keys are refused.
         """
         adjust = adjust or {}
         self.check_adjust(adjust)
@@ -510,6 +512,8 @@ class Device:
                  "value": float(k["new"])} for k in adjust["knobs"]]})
         if adjust.get("patch"):
             self.apply_patch(adjust["patch"])
+        for t in adjust.get("texts") or []:
+            self.set_text(int(t["row"]), int(t["col"]), int(t["index"]), t["text"])
 
     def prepare_reamp(self, preset=None) -> list[int]:
         """Point the live grid's guitar-input rows at USB 5 so a reamp reaches them.
