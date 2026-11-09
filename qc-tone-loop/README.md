@@ -88,6 +88,7 @@ qcsuite serve                # 実機(Cortex Controlは終了しておく)
 | 音量そろえ | `qcsuite level` | 同じDIでLUFSを測り、補正案を作り、sandboxのコピーにだけ当てて測り直す |
 | ブラインド比較 | `qcsuite tournament` | 音量をそろえ、名前を伏せて2つずつ比べ、Eloで順位を付ける |
 | 言葉で操作 | `qcsuite panel` | 「少し暗く」などを操作に変えてプレビューしてから送る。取り消しとA/B切り替え |
+| エディター | `qcsuite editor show` | 本体のエディター風のグリッドとパラメーター画面で、つまみ・スイッチ・バイパスを直接操作(保存なし、言葉で操作と同じ履歴で取り消し) |
 | スイープ | `qcsuite sweep` | ノブやモデルの組み合わせを総当たりでレンダリングし、素通しを除外して記録 |
 | 資料 | `qcsuite sheets` | チェーン図・ノブ表・シーン早見表のHTML/PDF、共有パック |
 | セットリスト | `qcsuite setlist` | 曲順から配置の計画とMIDIのプログラムチェンジ表を作る |
