@@ -44,7 +44,7 @@ def sources(request: Request):
     state = _state(request)
     backup = [{"ref": src.ref_text(n.get("folder"), n.get("position")), "name": n.get("name")}
               for n in src.backup_presets(state.mock)]
-    return {"backup": backup, "folders": [f["name"] for f in state.device().setlists()]}
+    return {"backup": backup, "folders": [f["name"] for f in state.device().setlists_cached()]}
 
 
 @router.post("/recalls")

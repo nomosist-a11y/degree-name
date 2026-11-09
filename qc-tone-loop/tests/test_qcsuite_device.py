@@ -143,6 +143,29 @@ def test_sandbox_is_created_once(device, fake):
     assert sum(1 for c in fake.calls if c[0] == "create_setlist") == 1
 
 
+def test_cached_listing_is_reused_until_a_write(device, fake):
+    def listings():
+        return sum(1 for c in fake.calls if c[0] == "list_folders")
+
+    device.setlists_cached()
+    before = listings()
+    device.setlists_cached()
+    assert listings() == before
+    key = device.ensure_sandbox()
+    occupied = next(f["occupied"] for f in device.setlists_cached() if f["key"] == key)
+    device.save_current(key, 0, "cache test")
+    assert next(f["occupied"] for f in device.setlists_cached() if f["key"] == key) == occupied + 1
+
+
+def test_cached_version_skips_the_round_trip(device, fake, monkeypatch):
+    asked = []
+    real = fake.version
+    monkeypatch.setattr(fake, "version", lambda *a, **k: asked.append(1) or real(*a, **k))
+    first = device.version()
+    assert device.version(cached=True) == first
+    assert len(asked) == 1
+
+
 def test_save_reports_the_name_the_unit_chose(device):
     key = device.ensure_sandbox()
     device.save_current(key, 0, "Laney test")

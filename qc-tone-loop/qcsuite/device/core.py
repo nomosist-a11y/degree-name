@@ -80,6 +80,8 @@ class Device:
         self.retry_delay = retry_delay
         self.notices: list[Notice] = []
         self._lock = threading.RLock()
+        self._version: dict | None = None
+        self._folders_cache: tuple[float, list[dict]] | None = None
 
     # -- plumbing ------------------------------------------------------------
 
@@ -110,11 +112,36 @@ class Device:
     def catalog(self):
         return self._retry("カタログの取得", lambda: self.qc.catalog, attempts=4)
 
-    def version(self) -> dict:
+    def version(self, cached: bool = False) -> dict:
+        """Firmware and serial. ``cached`` reuses the last answer: the web UI asks
+        on every page, and a fresh read waits behind whatever holds the unit."""
+        if cached and self._version is not None:
+            return self._version
         v = self._retry("バージョンの取得", self.qc.version)
-        return {"firmware": str(getattr(v, "app_fw_version", "?")),
-                "serial": str(getattr(v, "device_serial_number", "")),
-                "mock": self.mock}
+        self._version = {"firmware": str(getattr(v, "app_fw_version", "?")),
+                         "serial": str(getattr(v, "device_serial_number", "")),
+                         "mock": self.mock}
+        return self._version
+
+    #: How long :meth:`setlists_cached` reuses a listing (seconds).
+    FOLDERS_MAX_AGE = 60.0
+
+    def _forget_folders(self):
+        self._folders_cache = None
+
+    def setlists_cached(self) -> list[dict]:
+        """:meth:`setlists`, reused for :data:`FOLDERS_MAX_AGE` seconds.
+
+        A listing collects the unit's answers for ~20 s while holding the device
+        lock, so the web UI (which shows folders on most pages) uses this.
+        Writes made through this class drop the cached listing; edits made on
+        the unit's screen show up when it expires. Code that must see the unit's
+        current state (plans, polling loops) keeps calling :meth:`setlists`.
+        """
+        cached = self._folders_cache
+        if cached is not None and time.monotonic() - cached[0] < self.FOLDERS_MAX_AGE:
+            return cached[1]
+        return self.setlists()
 
     def folders(self, seconds: float = 20.0) -> list[dict]:
         with self._lock:
@@ -131,7 +158,9 @@ class Device:
 
     def setlists(self) -> list[dict]:
         """User folders, sandbox folders and the Factory Library only."""
-        return [f for f in self.folders() if f["kind"] in ("user", "sandbox", "factory")]
+        out = [f for f in self.folders() if f["kind"] in ("user", "sandbox", "factory")]
+        self._folders_cache = (time.monotonic(), out)
+        return out
 
     def presets(self, key: str, include_empty: bool = False) -> list[dict]:
         entries = self._retry(f"一覧の取得({guard.folder_name(key)})",
@@ -373,6 +402,7 @@ class Device:
                 return key
             self._require_setlist_room("sandbox")
             self.policy.check(key, "sandbox の作成")
+            self._forget_folders()
             self.qc.create_setlist(guard.folder_name(key))
             self.notice(INFO, f"sandbox フォルダ「{guard.folder_name(key)}」を作りました。")
             deadline = time.monotonic() + (30 if not self.mock else 1)
@@ -388,6 +418,7 @@ class Device:
         with self._lock:
             self.policy.check_create_folder(name, self._existing_keys())
             self._require_setlist_room(name)
+            self._forget_folders()
             return self.qc.create_setlist(name)
 
     def _require_setlist_room(self, name: str):
@@ -403,6 +434,7 @@ class Device:
             raise PlanError("フォルダの削除は計画(plan)経由で実行してください。")
         with self._lock:
             self.policy.check_delete_folder(name)
+            self._forget_folders()
             return self.qc.delete_setlist(guard.folder_name(guard.folder_key(name)))
 
     def _check_overwrite(self, key: str, position: int, step) -> dict:
@@ -434,6 +466,7 @@ class Device:
         with self._lock:
             self.policy.check(key, "保存")
             self._check_overwrite(key, position, step)
+            self._forget_folders()
             stored = self.qc.save_current_preset(key, position, name, instrument=instrument,
                                                  confirm=True)
             if stored is None or not guard.name_matches(name, stored):
@@ -535,6 +568,7 @@ class Device:
             raise PlanError("削除は計画(plan)経由でのみ実行できます。")
         with self._lock:
             self.policy.check(key, "削除")
+            self._forget_folders()
             self.qc.delete_preset(key, name)
 
     def move_preset(self, key: str, name: str, to_position: int, *, step=None):
@@ -546,4 +580,5 @@ class Device:
             if to_position in occupied:
                 raise PlanError(f"移動先 {pq.position_to_slot(to_position)} には"
                                 f"「{occupied[to_position]}」があります。")
+            self._forget_folders()
             self.qc.move_preset(key, name, to_position)

@@ -213,7 +213,7 @@ def create_app(mock: bool = False, allow_folders=(), fake=None) -> FastAPI:
     def status(connect: bool = False):
         info = None
         if connect or state.connected:
-            info = state.device().version()
+            info = state.device().version(cached=not connect)
         device = state.device() if state.connected else None
         return {
             "version": __version__, "mode": "mock" if mock else "hardware",
@@ -236,8 +236,9 @@ def create_app(mock: bool = False, allow_folders=(), fake=None) -> FastAPI:
         return {"connected": False}
 
     @app.get("/api/folders")
-    def folders():
-        return state.device().setlists()
+    def folders(fresh: bool = False):
+        device = state.device()
+        return device.setlists() if fresh else device.setlists_cached()
 
     @app.get("/api/presets")
     def presets(folder: str):
