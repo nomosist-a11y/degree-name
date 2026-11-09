@@ -681,3 +681,138 @@ def test_block_swapped_mid_drag_is_a_conflict_at_end(device):
     with pytest.raises(editor.EditorConflict):
         s.end(device, g["gesture"], {"real": 9.0})
     assert panel.history_view(True) == []
+
+
+# -- round 2: header, device list, replace, serialized edits ------------------------------
+
+def test_view_header_has_preset_name_dirty_and_tempo(device, fake):
+    v = editor.view(device)
+    assert v["preset"]["name"] == fake.live.name and v["preset"]["dirty"] is False
+    assert len(v["scene_labels"]) <= 8
+    editor.EditorSession().set(device, {"row": 0, "col": 0, "model_id": 1038, "param": "BASS",
+                                        "real": 2.0})
+    fake.dirty = True
+    assert editor.view(device)["preset"]["dirty"] is True
+
+
+def test_catalog_listing_groups_and_greys(device):
+    groups = {g["key"]: g for g in editor.catalog_listing(device)["groups"]}
+    assert list(groups)[:3] == ["plugins", "amp", "capture"]
+    amp = groups["amp"]
+    assert amp["has_bass"] and any(m["bass"] for m in amp["models"])
+    names = [m["name"] for m in amp["models"]]
+    assert names == sorted(names, key=str.lower)
+    assert not any(m["plugin"] for m in amp["models"])
+    plugins = {m["name"]: m for m in groups["plugins"]["models"]}
+    assert not plugins["Plini Clean"]["usable"] and "未所有" in plugins["Plini Clean"]["why_not"]
+    assert plugins["The Amp Snob"]["usable"]
+    assert not any(m["usable"] for m in groups["capture"]["models"])
+    every = [m["id"] for g in groups.values() for m in g["models"]]
+    assert 23000 not in every and len(every) == len(set(every))     # internal / no duplicates
+
+
+def test_replace_reads_back_and_is_one_undo_unit(device):
+    s = editor.EditorSession()
+    r = s.replace(device, {"row": 0, "col": 0, "model_id": 1038, "new_model_id": 1001})
+    assert r["id"] and r["model_id"] == 1001
+    grid = device.grid()
+    assert next(b for b in grid["blocks"] if (b["row"], b["col"]) == (0, 0))["model_id"] == 1001
+    (entry,) = panel.history_view(True)
+    assert "差し替え" in entry["instruction"]
+    panel.undo(device)
+    grid = device.grid()
+    assert next(b for b in grid["blocks"] if (b["row"], b["col"]) == (0, 0))["model_id"] == 1038
+
+
+def test_replace_into_an_empty_cell_and_refusals(device):
+    s = editor.EditorSession()
+    s.replace(device, {"row": 2, "col": 3, "model_id": None, "new_model_id": 2})
+    with pytest.raises(editor.EditorConflict, match="空いていません"):
+        s.replace(device, {"row": 2, "col": 3, "model_id": None, "new_model_id": 1})
+    with pytest.raises(editor.EditorConflict):
+        s.replace(device, {"row": 2, "col": 3, "model_id": 999, "new_model_id": 1})
+    plini = device.catalog.find("Plini Clean").id
+    with pytest.raises(editor.EditorError, match="未所有"):
+        s.replace(device, {"row": 2, "col": 3, "model_id": 2, "new_model_id": plini})
+    with pytest.raises(editor.EditorError, match="キャプチャー"):
+        s.replace(device, {"row": 2, "col": 3, "model_id": 2, "new_model_id": 14000})
+    with pytest.raises(editor.EditorError, match="一覧にありません"):
+        s.replace(device, {"row": 2, "col": 3, "model_id": 2, "new_model_id": 23000})
+
+
+def test_replace_refused_for_dsp_changes_nothing(device, monkeypatch):
+    import pyquadcortex as pq
+
+    def refuse(patch):
+        raise pq.BlockRefused("no DSP")
+    monkeypatch.setattr(device, "apply_patch", refuse)
+    s = editor.EditorSession()
+    with pytest.raises(editor.EditorError, match="DSP"):
+        s.replace(device, {"row": 0, "col": 0, "model_id": 1038, "new_model_id": 1001})
+    assert panel.history_view(True) == []
+
+
+def test_edits_wait_for_the_drag_in_progress(device):
+    s = editor.EditorSession()
+    s.IDLE_WAIT = 0.2
+    g = s.begin(device, {"row": 0, "col": 0, "model_id": 1038, "param": "GAIN 1"})
+    with pytest.raises(editor.EditorError, match="まだ終わっていません"):
+        s.begin(device, {"row": 0, "col": 0, "model_id": 1038, "param": "BASS"})
+    s.move(device, g["gesture"], {"seq": 1, "real": 7.0})
+    done = {}
+    t = threading.Thread(target=lambda: done.setdefault("r", s.begin(
+        device, {"row": 0, "col": 0, "model_id": 1038, "param": "BASS"})))
+    s.IDLE_WAIT = 5.0
+    t.start()
+    s.end(device, g["gesture"], {"real": 9.0})
+    t.join(5)
+    assert "gesture" in done["r"]
+    second = s._gestures[done["r"]["gesture"]]
+    gain = next(p for p in second.block["params"] if p["name"] == "GAIN 1")
+    assert gain["real"] == pytest.approx(9.0)          # its "before" holds the first drag's end
+    s.end(device, done["r"]["gesture"], {"real": 8.0})
+    panel.undo(device)                                  # reverts BASS only
+    assert amp_param(device, "GAIN 1")["real"] == pytest.approx(9.0)
+
+
+def test_block_swapped_mid_drag_stops_the_moves(device, fake):
+    s = editor.EditorSession()
+    s.CHECK_EVERY = 2
+    g = s.begin(device, {"row": 0, "col": 0, "model_id": 1038, "param": "BASS"})
+    s.move(device, g["gesture"], {"seq": 1, "real": 4.0})
+    s.move(device, g["gesture"], {"seq": 2, "real": 4.5})
+    device.apply_patch({"ops": [{"op": "set_block", "row": 0, "col": 0, "model": 1001}]})
+    since = len(fake.calls)
+    with pytest.raises(editor.EditorConflict):
+        s.move(device, g["gesture"], {"seq": 3, "real": 5.0})
+    assert not [c for c in fake.calls[since:] if c[0] == "set_param"]
+    assert s.pending() == 0
+
+
+def test_stale_sweep_skips_a_gesture_with_a_write_in_flight(device):
+    s = editor.EditorSession(stale_seconds=0.0)
+    g = s.begin(device, {"row": 0, "col": 0, "model_id": 1038, "param": "BASS"})
+    gesture = s._gestures[g["gesture"]]
+    gesture.touched -= 1
+    gesture.send_lock.acquire()
+    try:
+        assert s.finish_stale(device) == [] and s.pending() == 1
+    finally:
+        gesture.send_lock.release()
+
+
+def test_routes_catalog_replace_and_end_conflict(client):
+    groups = client.get("/api/editor/catalog").json()["groups"]
+    assert groups[1]["key"] == "amp"
+    r = client.post("/api/editor/replace", json={"row": 0, "col": 0, "model_id": 999,
+                                                 "new_model_id": 1001})
+    assert r.status_code == 409 and r.json()["conflict"]
+    g = client.post("/api/editor/begin", json={"row": 0, "col": 0, "model_id": 1038,
+                                               "param": "BASS"}).json()["gesture"]
+    client.app.state.qc.device().apply_patch(
+        {"ops": [{"op": "set_block", "row": 0, "col": 0, "model": 1001}]})
+    r = client.post("/api/editor/end", json={"gesture": g, "real": 5.0})
+    assert r.status_code == 409 and r.json()["conflict"]
+    r = client.post("/api/editor/replace", json={"row": 0, "col": 0, "model_id": 1001,
+                                                 "new_model_id": 1038})
+    assert r.status_code == 200 and r.json()["id"]

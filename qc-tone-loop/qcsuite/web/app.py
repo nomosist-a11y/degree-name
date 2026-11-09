@@ -57,7 +57,7 @@ SESSION_COOKIE = "qcsuite_session"
 #: POSTs that change the live grid (or its routing): refused while a job runs.
 GRID_CHANGING = re.compile(
     r"^/api/(apply|connect|disconnect|di/record|mock/reset"
-    r"|library/load|panel/(apply|undo|redo|ab/switch|ab/last)|editor/(set|begin|move|end)"
+    r"|library/load|panel/(apply|undo|redo|ab/switch|ab/last)|editor/(set|begin|move|end|replace)"
     r"|watch/(start|take|sessions/[^/]+/apply)|leveler/check-lane|research/.*)$")
 
 

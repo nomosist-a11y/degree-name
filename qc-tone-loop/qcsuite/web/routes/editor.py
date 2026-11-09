@@ -68,15 +68,38 @@ async def begin(request: Request):
 async def move(request: Request):
     body = await _body(request)
     state = _state(request)
-    return await run_in_threadpool(state.editor.move, state.device(),
-                                  str(body.get("gesture", "")), body)
+    try:
+        return await run_in_threadpool(state.editor.move, state.device(),
+                                      str(body.get("gesture", "")), body)
+    except editor.EditorConflict as exc:
+        return _conflict(exc)
 
 
 @router.post("/end")
 async def end(request: Request):
     body = await _body(request)
     state = _state(request)
-    result = await run_in_threadpool(state.editor.end, state.device(),
-                                    str(body.get("gesture", "")), body)
+    try:
+        result = await run_in_threadpool(state.editor.end, state.device(),
+                                        str(body.get("gesture", "")), body)
+    except editor.EditorConflict as exc:
+        return _conflict(exc)
+    state.checkpoint()
+    return result
+
+
+@router.get("/catalog")
+def catalog(request: Request):
+    return editor.catalog_listing(_state(request).device())
+
+
+@router.post("/replace")
+async def replace(request: Request):
+    body = await _body(request)
+    state = _state(request)
+    try:
+        result = await run_in_threadpool(state.editor.replace, state.device(), body)
+    except editor.EditorConflict as exc:
+        return _conflict(exc)
     state.checkpoint()
     return result

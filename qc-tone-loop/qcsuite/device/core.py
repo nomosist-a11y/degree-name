@@ -169,6 +169,13 @@ class Device:
         """qctone's JSON snapshot of the live grid."""
         return self._retry("グリッドの読み取り", lambda: qdevice.snapshot(self.qc))
 
+    def preset_dirty(self) -> bool | None:
+        """Whether the live grid has unsaved edits (a 2-11 ms read), or None if unknown."""
+        try:
+            return bool(self._retry("未保存の変更の確認", self.qc.preset_dirty, attempts=2))
+        except Exception:                            # noqa: BLE001 - only decorates the header
+            return None
+
     def active_scene(self) -> int:
         return int(self._retry("シーンの読み取り", self.qc.active_scene))
 

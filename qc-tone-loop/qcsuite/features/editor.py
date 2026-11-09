@@ -40,6 +40,7 @@ import time
 import uuid
 from types import SimpleNamespace
 
+from qcsuite.device import inert
 from qcsuite.errors import QcsuiteError
 from qcsuite.features import modelrepo, panel
 from qctone import device as qdevice
@@ -292,7 +293,12 @@ def view(device, repo="load") -> dict:
         rows.append({"row": r["row"], "in_port": r["in_port"], "out_port": r["out_port"],
                      "is_input": r["in_port"] not in ("EMPTY",),
                      "reaches_output": r["out_port"] in panel.REACHES_OUT, "cells": line})
+    labels = list(getattr(preset, "scene_labels", []) or [])
     return {"scene": grid.get("active_scene"), "rows": rows, "repo": repo_info(repo),
+            "preset": {"name": getattr(preset, "name", "") or "",
+                       "dirty": device.preset_dirty()},
+            "scene_labels": [str(x) for x in labels[:8]],
+            "tempo": round(float(getattr(preset, "tempo", 0) or 0), 1) or None,
             "note": NOT_SAVED}
 
 
@@ -471,18 +477,39 @@ def _refuse_switch_by_value(op: dict, grid: dict, device):
 
 
 class EditorSession:
-    """Gestures in flight for one web app (one unit)."""
+    """Gestures in flight for one web app (one unit).
+
+    Edits are serialized: a click or a new drag waits until the previous drag
+    has ended, so each history entry's "before" holds only its own change.
+    """
+
+    IDLE_WAIT = 5.0
+    CHECK_EVERY = 10          # moves between checks that the dragged block is still there
 
     def __init__(self, stale_seconds: float = STALE_SECONDS):
         self._gestures: dict[str, SimpleNamespace] = {}
         self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
         self.stale_seconds = stale_seconds
+
+    def _wait_idle(self, device):
+        """Finish abandoned drags, then wait for the one in progress to end."""
+        self.finish_stale(device)
+        with self._idle:
+            if not self._idle.wait_for(lambda: not self._gestures, timeout=self.IDLE_WAIT):
+                raise EditorError("前のつまみの操作がまだ終わっていません。少し待ってから"
+                                  "もう一度操作してください(何も書き込んでいません)。")
+
+    def _drop(self, g):
+        with self._idle:
+            self._gestures.pop(g.id, None)
+            self._idle.notify_all()
 
     # -- one-shot ----------------------------------------------------------------
 
     def set(self, device, req: dict) -> dict:
         """A click, a switch, a drop-down, a double-click reset, a bypass toggle."""
-        self.finish_stale(device)
+        self._wait_idle(device)
         before = device.grid()
         block = _locate(before, req)
         op, param = build_op(block, req)
@@ -490,10 +517,55 @@ class EditorSession:
         _check_expect(block, param, req.get("expect"), req.get("param") or "バイパス")
         return _commit(device, before, block, op)
 
+    def replace(self, device, req: dict) -> dict:
+        """Put another model in a cell (set_block), confirmed by reading back."""
+        self._wait_idle(device)
+        new_id = req.get("new_model_id")
+        if not isinstance(new_id, int):
+            raise EditorError("new_model_id を指定してください。")
+        entry = _listing_entry(device, new_id)
+        if entry is None:
+            raise EditorError(f"モデル {new_id} はこの本体の一覧にありません。")
+        if not entry["usable"]:
+            raise EditorError(f"{entry['name']}: {entry['why_not']}")
+        before = device.grid()
+        row, col = req.get("row"), req.get("col")
+        if req.get("model_id") is None:
+            if not isinstance(row, int) or not isinstance(col, int):
+                raise EditorError("row と col を指定してください。")
+            if _block(before, row, col) is not None:
+                raise EditorConflict(f"行{row + 1} 列{col + 1} は空いていませんでした。"
+                                     "何も書き込まず、画面を読み直します。")
+            block = None
+        else:
+            block = _locate(before, req)
+            if block["model_id"] == new_id:
+                return {"id": None, "model_id": new_id, "warnings": [], "note": NOT_SAVED}
+        op = {"op": "set_block", "row": row, "col": col, "model": new_id}
+        try:
+            result = device.apply_patch({"note": "editor", "ops": [op]})
+        except Exception as exc:                     # noqa: BLE001 - BlockRefused and friends
+            if type(exc).__name__ != "BlockRefused":
+                raise
+            raise EditorError(f"{entry['name']} を置けませんでした(プリセットの処理能力(DSP)が"
+                              f"足りない可能性があります)。何も変わっていません: {exc}") from None
+        after = device.grid()
+        placed = _block(after, row, col)
+        if placed is None or placed["model_id"] != new_id:
+            raise EditorError(f"{entry['name']} を送りましたが、読み戻すと置かれていませんでした"
+                              "(DSP 不足の可能性)。画面を読み直します。")
+        was = block["model"] if block else "空き"
+        label = f"エディター: 行{row + 1} 列{col + 1} {was} → {placed['model']}(差し替え)"
+        entry_id = panel.record(device.mock, {"note": "editor", "ops": [op]}, before, after,
+                                instruction=label, engine=ENGINE, summary=[label],
+                                warnings=result["warnings"])
+        return {"id": entry_id, "model_id": new_id, "warnings": result["warnings"],
+                "note": NOT_SAVED}
+
     # -- gestures ----------------------------------------------------------------
 
     def begin(self, device, req: dict) -> dict:
-        self.finish_stale(device)
+        self._wait_idle(device)
         before = device.grid()
         block = _locate(before, req)
         name = req.get("param") or ""
@@ -507,7 +579,8 @@ class EditorSession:
         g = SimpleNamespace(id=uuid.uuid4().hex[:10], row=block["row"], col=block["col"],
                             model_id=block["model_id"], param=param["name"],
                             real=param.get("real") is not None, before=before, block=block,
-                            newest=-1, ended=False, sent_any=False, touched=time.monotonic(),
+                            newest=-1, ended=False, sent_any=False, moves=0,
+                            touched=time.monotonic(),
                             mutex=threading.Lock(), send_lock=threading.Lock())
         with self._lock:
             self._gestures[g.id] = g
@@ -529,6 +602,12 @@ class EditorSession:
             raise EditorError("value を指定してください。")
         return {"value": float(req["value"])}
 
+    def _still_there(self, device, g) -> bool:
+        import pyquadcortex as pq
+        preset = device.current_preset()
+        return any(b.row == g.row and b.column == g.col and b.model_id == g.model_id
+                   for b in pq.blocks(preset))
+
     def move(self, device, gesture_id: str, req: dict) -> dict:
         g = self._get(gesture_id)
         seq = int(req.get("seq", 0))
@@ -541,7 +620,15 @@ class EditorSession:
             with g.mutex:
                 if g.ended or seq < g.newest:
                     return {"sent": False}       # a newer value arrived while waiting
+            g.touched = time.monotonic()
+            if g.moves and g.moves % self.CHECK_EVERY == 0 and not self._still_there(device, g):
+                with g.mutex:
+                    g.ended = True
+                self._drop(g)
+                raise EditorConflict(f"行{g.row + 1} 列{g.col + 1} のブロックが本体側で変わりました。"
+                                     "ドラッグを止めました。画面を読み直します。")
             device.set_knob(g.row, g.col, g.model_id, g.param, **amount)
+            g.moves += 1
             g.sent_any = True
             g.touched = time.monotonic()
         return {"sent": True}
@@ -553,41 +640,132 @@ class EditorSession:
             g.ended = True
             g.newest = math.inf
         with g.send_lock:                         # waits for a move in flight
-            with self._lock:
-                self._gestures.pop(g.id, None)
-            # The block may have been swapped on the unit's screen mid-drag.
-            _locate(device.grid(), {"row": g.row, "col": g.col, "model_id": g.model_id})
-            op = _knob_op(g.block, _param(g.block, g.param), g.param, amount)
-            return _commit(device, g.before, g.block, op)
+            try:
+                # The block may have been swapped on the unit's screen mid-drag.
+                _locate(device.grid(), {"row": g.row, "col": g.col, "model_id": g.model_id})
+                op = _knob_op(g.block, _param(g.block, g.param), g.param, amount)
+                return _commit(device, g.before, g.block, op)
+            finally:
+                self._drop(g)
 
     def finish_stale(self, device) -> list[str]:
-        """Record gestures whose page vanished mid-drag, so undo can still revert them."""
+        """Record gestures whose page vanished mid-drag, so undo can still revert them.
+
+        A gesture with a write still in flight is not stale (its lock is held).
+        """
         now = time.monotonic()
+        stale = []
         with self._lock:
-            stale = [g for g in self._gestures.values()
-                     if not g.ended and now - g.touched > self.stale_seconds]
-            for g in stale:
+            for g in list(self._gestures.values()):
+                if g.ended or now - g.touched <= self.stale_seconds:
+                    continue
+                if not g.send_lock.acquire(blocking=False):
+                    continue                     # a move is being sent right now
+                stale.append(g)
                 self._gestures.pop(g.id, None)
+            self._idle.notify_all()
         ids = []
         for g in stale:
-            with g.mutex:
-                g.ended = True
-            if not g.sent_any:
-                continue
-            after = device.grid()
-            after_block = _block(after, g.row, g.col)
-            op = {"op": "set_param", "row": g.row, "col": g.col, "param": g.param}
-            current = _param(after_block, g.param) if after_block else None
-            if current is not None:
-                op["real" if g.real else "value"] = _current(current)
-            label = _label(g.block, after_block, op) + "(ドラッグが途中で終わりました)"
-            ids.append(panel.record(device.mock, {"note": "editor", "ops": [op]}, g.before, after,
-                                    instruction=label, engine=ENGINE, summary=[label]))
+            try:
+                with g.mutex:
+                    g.ended = True
+                if not g.sent_any:
+                    continue
+                after = device.grid()
+                after_block = _block(after, g.row, g.col)
+                op = {"op": "set_param", "row": g.row, "col": g.col, "param": g.param}
+                current = _param(after_block, g.param) if after_block else None
+                if current is not None:
+                    op["real" if g.real else "value"] = _current(current)
+                label = _label(g.block, after_block, op) + "(ドラッグが途中で終わりました)"
+                ids.append(panel.record(device.mock, {"note": "editor", "ops": [op]}, g.before,
+                                        after, instruction=label, engine=ENGINE, summary=[label]))
+            finally:
+                g.send_lock.release()
         return ids
 
     def pending(self) -> int:
         with self._lock:
             return len(self._gestures)
+
+
+# -- the device list (left sidebar) ------------------------------------------------------
+
+#: Sidebar order and labels; each maps to catalog category names.
+SIDEBAR = [
+    ("plugins", "PLUGINS", ()),
+    ("amp", "AMP", ("Guitar Amplifier", "Bass Amplifier")),
+    ("capture", "NEURAL CAPTURE", ("Neural Capture", "Neural Capture V2")),
+    ("cab", "CAB", ("Cabsim Guitar (M)", "Cabsim Guitar (ST)", "Cabsim Bass (M)",
+                    "Cabsim Bass (ST)")),
+    ("overdrive", "OVERDRIVE", ("Guitar Overdrive", "Bass Overdrive")),
+    ("delay", "DELAY", ("Delay",)),
+    ("reverb", "REVERB", ("Reverb",)),
+    ("compressor", "COMPRESSOR", ("Compressor",)),
+    ("pitch", "PITCH", ("Pitch",)),
+    ("modulation", "MODULATION", ("Modulation",)),
+    ("filter", "FILTER", ("Filter",)),
+    ("wah", "WAH", ("Wah",)),
+    ("eq", "EQ", ("Equalizer",)),
+    ("morph", "MORPH", ("Morph",)),
+    ("synth", "SYNTH", ("Synth",)),
+    ("ir", "IR LOADER", ("IRLoaders",)),
+    ("utility", "UTILITY", ("Utility",)),
+    ("fxloop", "FX LOOP", ("FX Loop",)),
+    ("looper", "LOOPER", ("Loopers",)),
+]
+_SIDEBAR_COLOR = {"plugins": "cmp"}
+
+
+def catalog_listing(device, repo="load") -> dict:
+    """Every placeable model, grouped the way the sidebar shows them. Names only.
+
+    Hidden, internal and superseded models are left out. Unowned plugins and
+    capture models are listed but greyed (``usable: false``): an unowned plugin
+    passes audio through, and a capture block placed from here has no capture
+    to play (captures are chosen on the unit).
+    """
+    if repo == "load":
+        repo = load_repo(device)
+    catalog = device.catalog
+    by_cat = {}
+    for m in catalog:
+        rm = repo.get(m.id) if repo is not None else None
+        if m.hidden or m.internal or m.category_hidden or m.superseded or \
+                (rm is not None and (rm.hidden or rm.internal or rm.category_hidden)):
+            continue
+        plugin = getattr(m, "plugin_id", None) or getattr(m, "sku", None)
+        unowned = inert.inert_plugin(m)
+        why = None
+        if unowned:
+            why = f"未所有のプラグイン({unowned})です。置いても音は素通しです。"
+        elif m.id in inert.CAPTURE_MODELS or m.category.startswith("Neural Capture"):
+            why = "キャプチャーは本体で選んでください(ここから置いても鳴りません)。"
+        entry = {"id": m.id, "name": m.name, "category": m.category,
+                 "color": modelrepo.color_key(m.category),
+                 "bass": m.category.startswith(("Bass", "Cabsim Bass")),
+                 "based_on": (rm.based_on if rm else "") or m.based_on or "",
+                 "plugin": bool(plugin), "usable": why is None, "why_not": why}
+        key = "plugins" if plugin else next(
+            (k for k, _, cats in SIDEBAR if m.category in cats), "utility")
+        by_cat.setdefault(key, []).append(entry)
+    groups = []
+    for key, label, cats in SIDEBAR:
+        items = sorted(by_cat.get(key, []), key=lambda e: e["name"].lower())
+        if not items:
+            continue
+        color = _SIDEBAR_COLOR.get(key) or modelrepo.color_key(cats[0] if cats else None)
+        groups.append({"key": key, "label": label, "color": color,
+                       "has_bass": any(e["bass"] for e in items), "models": items})
+    return {"groups": groups}
+
+
+def _listing_entry(device, model_id: int):
+    for g in catalog_listing(device)["groups"]:
+        for e in g["models"]:
+            if e["id"] == model_id:
+                return e
+    return None
 
 
 # -- CLI (read-only: the editor itself is the web page) --------------------------------
