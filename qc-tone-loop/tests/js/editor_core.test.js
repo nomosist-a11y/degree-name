@@ -27,7 +27,8 @@ const PH = { name: "X", kind: "knob", placeholder: true, min: null, max: null, u
 
 test("exports", () => {
   for (const k of ["proportion", "angle", "valueFromProportion", "formatValue", "stepValue",
-    "selectStyle", "arcPath", "Throttle", "quantize", "dragValue", "range", "stepInterval"]) {
+    "selectStyle", "arcPath", "Throttle", "quantize", "dragValue", "range", "stepInterval",
+    "portLabel", "groupKeyForCategory"]) {
     assert.ok(k in C, `missing export ${k}`);
   }
 });
@@ -218,6 +219,28 @@ test("Throttle: cancel drops the pending value and waits for the one in flight",
   assert.ok(t.idle);
   await sleep(80);
   assert.deepEqual(sent, [1], "nothing sent after cancel");
+});
+
+
+test("portLabel: grid port names", () => {
+  const cases = { INPUT_1: "In 1", INPUT_1_2: "In 1/2", RETURN_1: "Ret 1", RETURN_1_2: "Ret 1/2",
+    PREV_ROW: "Prev. row", USB_5: "USB 5", USB_7_8: "USB 7/8", NEXT_ROW_3: "Row 3",
+    NEXT_ROW_3_4: "Row 3/4", MULTIPLE: "Multi Out", XLR_1_2: "Out 1/2", XLR_1: "Out 1",
+    OUT_3_4: "Out 3/4", SEND_1: "Send 1", SEND_1_2: "Send 1/2", SIDECHAIN_BUFFER: "S/C" };
+  for (const [k, v] of Object.entries(cases)) assert.equal(C.portLabel(k), v, k);
+  assert.equal(C.portLabel("EMPTY"), null);
+  assert.equal(C.portLabel(null), null);
+  assert.equal(C.portLabel("WEIRD_PORT"), "WEIRD PORT");
+});
+
+test("groupKeyForCategory: block categories -> sidebar groups", () => {
+  const cases = { "Guitar Amplifier": "amp", "Bass Amplifier": "amp", "Cabsim Guitar (M)": "cab",
+    "Cabsim Bass (ST)": "cab", "Guitar Overdrive": "overdrive", "Bass Overdrive": "overdrive",
+    "Neural Capture": "capture", "Neural Capture V2": "capture", "Delay": "delay", "Reverb": "reverb",
+    "Compressor": "compressor", "Pitch": "pitch", "Modulation": "modulation", "Filter": "filter",
+    "Wah": "wah", "Equalizer": "eq", "Morph": "morph", "Synth": "synth", "IRLoaders": "ir",
+    "Utility": "utility", "FX Loop": "fxloop", "Loopers": "looper", "": "utility" };
+  for (const [k, v] of Object.entries(cases)) assert.equal(C.groupKeyForCategory(k), v, k);
 });
 
 (async () => {

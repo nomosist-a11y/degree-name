@@ -207,9 +207,42 @@
     }
   }
 
+
+  // Grid port names (API) -> the short labels the panels show, or null for EMPTY.
+  //   INPUT_1 -> "In 1", INPUT_1_2 -> "In 1/2", RETURN_1 -> "Ret 1", PREV_ROW -> "Prev. row",
+  //   USB_5 -> "USB 5", NEXT_ROW_3_4 -> "Row 3/4", MULTIPLE -> "Multi Out", XLR_1_2 -> "Out 1/2",
+  //   OUT_3_4 -> "Out 3/4", SEND_1 -> "Send 1", SIDECHAIN_BUFFER -> "S/C".
+  const PORT_WORDS = { INPUT: "In", RETURN: "Ret", USB: "USB", NEXT_ROW: "Row", XLR: "Out",
+    OUT: "Out", SEND: "Send" };
+  function portLabel(port) {
+    if (!port || port === "EMPTY") return null;
+    if (port === "PREV_ROW") return "Prev. row";
+    if (port === "MULTIPLE") return "Multi Out";
+    if (port === "SIDECHAIN_BUFFER") return "S/C";
+    const m = /^([A-Z_]+?)_(\d+(?:_\d+)*)$/.exec(String(port));
+    if (m && PORT_WORDS[m[1]]) return PORT_WORDS[m[1]] + " " + m[2].split("_").join("/");
+    return String(port).replace(/_/g, " ");
+  }
+
+  // A block's category (API "category") -> the sidebar group key (/api/editor/catalog).
+  // Used only when the block's model is not in the catalog (plugins are found by id).
+  const GROUP_RULES = [
+    [/neural capture|capture/, "capture"], [/cabsim|cab sim/, "cab"], [/ir ?loader/, "ir"],
+    [/amplifier|\bamp\b/, "amp"], [/overdrive|drive/, "overdrive"], [/delay/, "delay"],
+    [/reverb/, "reverb"], [/compressor/, "compressor"], [/pitch/, "pitch"],
+    [/modulation/, "modulation"], [/filter/, "filter"], [/wah/, "wah"], [/equali[sz]er|\beq\b/, "eq"],
+    [/morph/, "morph"], [/synth/, "synth"], [/fx ?loop/, "fxloop"], [/looper/, "looper"],
+    [/utility/, "utility"], [/plugin/, "plugins"],
+  ];
+  function groupKeyForCategory(category) {
+    const c = String(category || "").toLowerCase();
+    for (const [re, key] of GROUP_RULES) if (re.test(c)) return key;
+    return "utility";
+  }
+
   const EditorCore = {
     range, proportion, angle, quantize, valueFromProportion, formatValue, stepInterval,
-    stepValue, dragValue, selectStyle, arcPath, Throttle,
+    stepValue, dragValue, selectStyle, arcPath, Throttle, portLabel, groupKeyForCategory,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = EditorCore;
   else window.EditorCore = EditorCore;

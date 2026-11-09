@@ -3,47 +3,127 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>qcsuite エディター</title>
 <link rel="stylesheet" href="/static/style.css">
 <link rel="stylesheet" href="/static/editor.css">
 </head>
-<body>
-<div id="edNotice" class="ed-notice" role="status">
-  <strong>保存していません。本体でプリセットを呼び出し直すと元に戻ります。</strong>
-  <span id="edNote" class="ed-note-extra"></span>
-</div>
-<main>
-  <h2>エディター</h2>
-
-  <section class="ed-stage" aria-label="グリッドとパラメーター">
-    <div class="ed-toolbar">
-      <button type="button" id="btnReload">読み直す</button>
-      <button type="button" id="btnUndo" title="Cmd/Ctrl+Z">取り消す</button>
-      <button type="button" id="btnRedo" title="Shift+Cmd/Ctrl+Z">やり直す</button>
-      <span class="ed-sep" aria-hidden="true"></span>
-      <button type="button" id="abA">A を聴く</button>
-      <button type="button" id="abB">B を聴く</button>
-      <button type="button" id="capA">いまを A に記録</button>
-      <button type="button" id="capB">いまを B に記録</button>
-      <span id="scene" class="ed-scene"></span>
+<body class="ed-app">
+<div class="app">
+  <!-- top bar -->
+  <header class="tb" aria-label="エディター">
+    <div class="tb-left">
+      <a class="tb-brand" href="/static/index.html" title="qcsuite ホーム">
+        <svg class="tb-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="11" cy="16" r="6.5" fill="none" stroke="currentColor" stroke-width="2.6"/>
+          <path d="M17.5 16v11" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+          <path d="M29 11.2a6.5 6.5 0 1 0 0 9.6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        </svg>
+        <span class="tb-word">qcsuite</span>
+      </a>
+      <span class="tb-dev">
+        <svg class="tb-devicon" viewBox="0 0 28 22" aria-hidden="true">
+          <rect x="1.5" y="3" width="25" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M5 8h18" stroke="currentColor" stroke-width="1.4"/>
+          <g fill="currentColor"><circle cx="7" cy="14" r="1.2"/><circle cx="11.7" cy="14" r="1.2"/><circle cx="16.3" cy="14" r="1.2"/><circle cx="21" cy="14" r="1.2"/></g>
+        </svg>
+        <span class="tb-devname">Quad Cortex</span>
+        <span id="edMode" class="tb-badge">…</span>
+      </span>
     </div>
-    <div id="edGrid" class="ed-grid"><p class="ed-empty">読み込み中…</p></div>
-    <div id="edParams" class="ed-params"></div>
-    <p id="edRepo" class="ed-repo"></p>
-  </section>
+    <nav class="tb-tabs" aria-label="表示">
+      <a class="tb-tab on" href="/static/editor.html" aria-current="page">GRID</a>
+      <a class="tb-tab" href="/static/library.html" title="プリセット管理を開く">DIRECTORY</a>
+    </nav>
+    <div class="tb-right">
+      <button type="button" class="rb" id="btnUndo" title="取り消す(Cmd/Ctrl+Z)" aria-label="取り消す">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 7.5H5V4M5.3 7.3A8 8 0 1 1 4 12"/></svg>
+      </button>
+      <button type="button" class="rb" id="btnRedo" title="やり直す(Shift+Cmd/Ctrl+Z)" aria-label="やり直す">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 7.5H19V4M18.7 7.3A8 8 0 1 0 20 12"/></svg>
+      </button>
+      <span class="tb-sep" aria-hidden="true"></span>
+      <button type="button" class="rb" id="btnAB" title="A/B 比較" aria-label="A/B 比較" aria-haspopup="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="txt"><text x="12" y="15.6" text-anchor="middle">A/B</text></svg>
+      </button>
+      <button type="button" class="rb" id="btnHistory" title="履歴" aria-label="履歴">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.5"/><path d="M12 8v4.3l2.8 1.8"/></svg>
+      </button>
+      <button type="button" class="rb" id="btnMore" title="メニュー" aria-label="メニュー" aria-haspopup="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><g class="fill"><circle cx="7" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="17" cy="12" r="1.4"/></g></svg>
+      </button>
+    </div>
+  </header>
 
-  <section class="panel">
+  <div class="main">
+    <!-- left: device list (a drawer on phones) -->
+    <aside id="sidebar" class="sb" aria-label="デバイス一覧"></aside>
+    <div id="sbBackdrop" class="sb-backdrop" hidden></div>
+
+    <div class="work">
+      <!-- preset bar -->
+      <div class="pb" aria-label="プリセット">
+        <button type="button" class="pb-btn pb-devices" id="btnDevices" title="デバイス一覧" aria-label="デバイス一覧">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <div class="pb-seg pb-name-seg">
+          <button type="button" class="pb-btn" disabled title="プリセットの切り替えは本体で(切り替えると音が変わり、編集が消えます)" aria-label="前のプリセット(本体で)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+          </button>
+          <button type="button" class="pb-btn" disabled title="プリセットの切り替えは本体で(切り替えると音が変わり、編集が消えます)" aria-label="次のプリセット(本体で)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg>
+          </button>
+          <div class="pb-name" id="presetName" title="">…</div>
+          <button type="button" class="pb-btn" id="btnSave" title="sandbox に保存(計画を確認してから)" aria-label="sandbox に保存">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h11.5L19.5 7.5v12H5z"/><path d="M8 4.5v5h7.5v-5"/><path d="M8 19.5v-5.5h8.5v5.5"/></svg>
+          </button>
+          <button type="button" class="pb-btn" id="btnPresetMenu" title="メニュー" aria-label="プリセットのメニュー" aria-haspopup="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><g class="fill"><circle cx="12" cy="6.5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="17.5" r="1.4"/></g></svg>
+          </button>
+        </div>
+        <div class="pb-scenes" id="scenes" role="group" aria-label="シーン(表示のみ)"></div>
+        <button type="button" class="pb-btn pb-ab" id="btnAB2" title="A/B 比較" aria-label="A/B 比較" aria-haspopup="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true" class="txt small"><text x="6.6" y="10.2" text-anchor="middle">A</text><text x="17.4" y="10.2" text-anchor="middle">B</text><text x="6.6" y="20.4" text-anchor="middle">C</text><text x="17.4" y="20.4" text-anchor="middle">D</text><path d="M12 2.5v19M3 12h18" class="thin"/></svg>
+        </button>
+      </div>
+
+      <!-- grid -->
+      <div id="edGrid" class="ed-grid" aria-label="グリッド"><p class="ed-empty">読み込み中…</p></div>
+
+      <!-- parameter panel -->
+      <div id="edParams" class="ed-params"></div>
+    </div>
+  </div>
+
+  <!-- status bar -->
+  <footer class="sbar">
+    <div class="sbar-left">
+      <span id="stTempo">TEMPO —</span>
+      <span class="sbar-sep" aria-hidden="true"></span>
+      <span id="stScene">シーン —</span>
+    </div>
+    <div class="sbar-mid" id="stApp">qcsuite</div>
+    <div class="sbar-right" role="status">
+      <span class="sbar-notice"><span class="long">保存していません。本体でプリセットを呼び出し直すと元に戻ります。</span><span class="short">保存していません(呼び出し直すと元に戻ります)</span></span>
+      <span id="edNote" class="sbar-extra"></span>
+    </div>
+  </footer>
+</div>
+
+<!-- history drawer -->
+<aside id="historyDrawer" class="drawer" aria-label="履歴" hidden>
+  <div class="drawer-head">
     <h3>履歴</h3>
-    <p class="small muted">エディターと「言葉で操作」の変更は同じ履歴に入ります。つまみ 1 回のドラッグ(またはクリック)が取り消しの 1 単位です。</p>
-    <div id="history"></div>
-  </section>
+    <button type="button" class="rb" id="btnHistoryClose" aria-label="閉じる" title="閉じる">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg>
+    </button>
+  </div>
+  <p class="drawer-note">エディターと「言葉で操作」の変更は同じ履歴に入ります。つまみ 1 回のドラッグ(またはクリック)が取り消しの 1 単位です。</p>
+  <div id="history"></div>
+</aside>
 
-  <section class="panel">
-    <h3>sandbox に保存</h3>
-    <p class="small muted">いまのグリッドを sandbox の空きスロットに保存する計画を作ります。まず計画(dry run)だけを作り、内容を確認してから実行します。エディターの操作だけでは保存されません。</p>
-    <div class="row"><input id="saveName" placeholder="保存する名前"><button id="btnSave">計画を見る</button></div>
-  </section>
-</main>
+<div id="jobbox" class="jobbox"></div>
+
 <script src="/static/common.js"></script>
 <script src="/static/editor_core.js"></script>
 <script src="/static/editor.js"></script>
