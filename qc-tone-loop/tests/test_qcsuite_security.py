@@ -1,3 +1,4 @@
+from pathlib import Path
 """Regression tests for the safety audit: web request checks, overwrites, read-back,
 folder deletion backups, dry runs that send nothing, folder-name tricks, read-only."""
 
@@ -81,6 +82,25 @@ def test_deleting_a_folder_backs_up_every_preset_in_it(device, fake):
                               device, confirm=True)
     saved = [p for p in result["backups"] if p.endswith(".json") and "listing_" not in p]
     assert len(saved) == 3
+    assert key not in fake.folders
+
+
+def test_a_write_answering_with_a_library_object_is_recorded(device, fake, monkeypatch):
+    """2026-10-28: delete_setlist answered with a FileMessage, which went into
+    report.jsonl as stored_name and crashed json.dumps after the folder was gone."""
+    import json
+
+    class FileMessage:                       # stands in for pyquadcortex's reply
+        pass
+
+    real = fake.delete_setlist
+    monkeypatch.setattr(fake, "delete_setlist", lambda *a, **k: (real(*a, **k), FileMessage())[1])
+    key = device.ensure_sandbox()
+    result = plan_mod.execute(plan_mod.Plan("del", steps=[plan_mod.Step("delete_folder", key)]),
+                              device, confirm=True)
+    assert result["results"][0]["ok"] and result["results"][0]["stored_name"] is None
+    lines = (Path(result["dir"]) / "report.jsonl").read_text().splitlines()
+    assert json.loads(lines[-1])["ok"] is True
     assert key not in fake.folders
 
 

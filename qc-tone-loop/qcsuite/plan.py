@@ -268,6 +268,13 @@ def _run_step(step: Step, device, rebuild=None):
     raise PlanError(f"未知の操作 {step.action}")
 
 
+def _write_record(report: Path, record: dict):
+    """Append one step to report.jsonl. Recording never stops a plan: a value
+    that is not JSON is written as its text."""
+    with open(report, "a") as f:
+        f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+
 def execute(plan: Plan, device, *, confirm: bool = False, rebuild=None,
             on_progress=None) -> dict:
     """Run a plan (see module docstring). Dry run unless ``confirm``."""
@@ -288,16 +295,18 @@ def execute(plan: Plan, device, *, confirm: bool = False, rebuild=None,
                   "at": time.strftime("%H:%M:%S")}
         try:
             stored = _run_step(step, device, rebuild)
+            # Only a name means anything here: some writes answer with a library
+            # object (delete_folder returns a FileMessage), which is not a name
+            # and is not JSON - recording it crashed the 2026-10-28 cleanup.
+            stored = stored if isinstance(stored, str) else None
             verified = _verify(step, device, stored)
             record.update(ok=True, stored_name=verified or stored)
         except Exception as exc:
             record.update(ok=False, error=f"{type(exc).__name__}: {exc}")
-            with open(report, "a") as f:
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            _write_record(report, record)
             raise PlanError(f"手順 {i}「{step.describe()}」で止まりました: {exc}"
                             f"(それまでの手順は実行済み。記録: {report})") from exc
-        with open(report, "a") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        _write_record(report, record)
         results.append(record)
     return {"dry_run": False, "plan": plan.to_dict(), "dir": str(folder),
             "backups": backups, "results": results}
