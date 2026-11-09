@@ -60,7 +60,7 @@ def test_first_arrival_survives_high_gain_and_delay(rig):
                                      "param": knob, "value": 0.95}]})
     di, _ = di_mod.load("short", True)
     result, diag = batch.reamp_aligned(rig, di, SR)
-    assert diag["method"] == "first_arrival"
+    assert diag["method"] == "calibration"
     assert result.latency_ms == pytest.approx(render.MEASURED_LATENCY_MS, abs=1.0)
     assert abs(_onset(result.audio) - _onset(di)) < SR * 0.002
     assert len(result.audio) == len(di) + int(render.TAIL_S * SR)
@@ -94,7 +94,7 @@ def test_stems_are_aligned_named_and_listed(rig):
         rows = list(csv.DictReader(f))
     assert [r["preset"] for r in rows] == ["(DI)", "Laney test", "Brit 2203", "aaaa"]
     assert rows[3]["excluded"] == "yes" and "Plini" in rows[3]["reasons"]
-    assert rows[1]["align_method"] == "first_arrival"
+    assert rows[1]["align_method"] == "calibration"
     readme = (paths.home(True) / summary["readme"]).read_text()
     assert "EXCLUDED" in readme and "1 小節目" in readme
     assert summary["latency"]["warning"] is None
@@ -183,3 +183,33 @@ def test_web_flow(client):
     assert whole.json()["items"] == 15
     client.post(f"/api/jobs/{whole.json()['job']}/cancel")
     wait_job(client, whole.json()["job"])
+
+
+@pytest.mark.parametrize("aligner", ["render", "batch"])
+def test_arrival_ignores_hiss_raised_by_a_high_gain_amp(rig, aligner):
+    """2026-10-28 on the unit: a high-gain amp's hiss crossed the onset threshold
+    before the first note, so stems were cut ~70 ms early. The arrival must be
+    taken above the noise heard in the pre-roll."""
+    rig.renderer.input_noise_dbfs = -60.0
+    rig.device.read_stored("/media/p4/Presets/kami", 6)
+    rig.device.prepare_reamp()
+    amp = next(b for b in rig.device.grid()["blocks"] if b["category"] == "Guitar Amplifier")
+    knob = next(p["name"] for p in amp["params"] if p["name"] in ("GAIN", "DRIVE", "INPUT GAIN", "GAIN 1"))
+    rig.device.apply_patch({"ops": [{"op": "set_param", "row": 0, "col": amp["col"],
+                                     "param": knob, "value": 1.0}]})
+    di, _ = di_mod.load("short", True)
+
+    # the fault is really there: the plain -35 dB onset fires on the hiss
+    pre = int(render.PREROLL_S * SR)
+    padded = np.concatenate([di, np.zeros(int(render.LATENCY_MARGIN_S * SR))])
+    rec = rig.renderer.playrec(padded, SR)
+    played = np.concatenate([np.zeros(pre), padded, np.zeros(int(render.TAIL_S * SR))])
+    naive = render.first_arrival_ms(played, rec, SR)
+    assert naive is None or naive < render.MEASURED_LATENCY_MS - 20
+
+    if aligner == "render":
+        result = render.render(rig.renderer, di, SR)
+    else:
+        result, diag = batch.reamp_aligned(rig, di, SR)
+        assert diag["method"] == "calibration"
+    assert result.latency_ms == pytest.approx(render.MEASURED_LATENCY_MS, abs=1.0)

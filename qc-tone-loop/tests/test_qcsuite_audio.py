@@ -180,3 +180,25 @@ def test_inert_lane_volume_option_keeps_the_level(di):
         assert r.device.lane_volume_db(0) == pytest.approx(-20.0, abs=0.01)   # reads back
         after = lufs.integrated_loudness(r.render(di).audio, SR)
         assert after == pytest.approx(before, abs=0.1)                          # but no effect
+
+
+def test_calibration_is_measured_once_and_refuses_a_spread(rig):
+    rig.device.read_stored("/media/p4/Presets/kami", 6)
+    rig.device.prepare_reamp()
+    lat = render.calibrate(rig.renderer)
+    assert lat == pytest.approx(render.MEASURED_LATENCY_MS, abs=0.5)
+    before = rig.renderer.renders
+    assert render.calibrate(rig.renderer) == lat
+    assert rig.renderer.renders == before                    # cached, no second beep
+
+    class Wobbly:
+        mock = True
+        def __init__(self):
+            self.n = 0
+        def playrec(self, mono, sr=SR):
+            self.n += 1
+            d = int((0.300 + 0.004 * self.n) * sr)           # 4 ms apart each time
+            pre = np.zeros(int(render.PREROLL_S * sr))
+            out = np.concatenate([np.zeros(d), pre, mono, np.zeros(int(render.TAIL_S * sr))])
+            return np.stack([out, out], axis=1)[: len(pre) + len(mono) + int(render.TAIL_S * sr)]
+    assert render.calibrate(Wobbly()) is None

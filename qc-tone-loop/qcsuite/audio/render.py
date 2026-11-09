@@ -71,17 +71,26 @@ class FakeRenderer:
 
     mock = True
 
-    def __init__(self, fake, latency_ms: float = MEASURED_LATENCY_MS, noise_dbfs: float = -96.0):
+    def __init__(self, fake, latency_ms: float = MEASURED_LATENCY_MS, noise_dbfs: float = -96.0,
+                 input_noise_dbfs: float | None = None):
         self.fake = fake
         self.latency_ms = latency_ms
         self.noise_dbfs = noise_dbfs
+        #: Noise entering the grid with the DI (pickup and USB noise). A high-gain
+        #: amp raises it far above ``noise_dbfs``, as on the unit, where it reached
+        #: the onset threshold before the first note arrived (2026-10-28).
+        self.input_noise_dbfs = input_noise_dbfs
         self.renders = 0
 
     def playrec(self, mono, sr: int = SR) -> np.ndarray:
         pre = np.zeros(int(PREROLL_S * sr))
         tail = np.zeros(int(TAIL_S * sr))
         play = np.concatenate([pre, np.asarray(mono, dtype=np.float64), tail])
-        wet = dsp.process(self.fake.audible_chain(), play, sr, self.fake._catalog_obj)
+        source = play
+        if self.input_noise_dbfs is not None:
+            hiss = np.random.default_rng(7).standard_normal(len(play))
+            source = play + hiss * 10 ** (self.input_noise_dbfs / 20)
+        wet = dsp.process(self.fake.audible_chain(), source, sr, self.fake._catalog_obj)
         delay = int(self.latency_ms / 1000 * sr)
         wet = np.vstack([np.zeros((delay, 2)), wet])[: len(play)]
         rng = np.random.default_rng(len(play))
@@ -113,22 +122,55 @@ def _envelope(x, sr, smooth_ms=5.0):
 
 
 ONSET_THRESHOLD_DB = -35.0
+#: How far above the recording's own noise the arrival threshold must sit (x2 = +6 dB).
+NOISE_MARGIN = 2.0
 
 
-def first_arrival_ms(played, recorded, sr: int) -> float | None:
-    """Delay between the first sample of each signal within 35 dB of its peak."""
-    from qctone.audio_io import onset
-    rec = recorded.mean(axis=1) if np.ndim(recorded) == 2 else recorded
-    a = onset(np.asarray(played, dtype=np.float64), ONSET_THRESHOLD_DB)
-    b = onset(np.asarray(rec, dtype=np.float64), ONSET_THRESHOLD_DB)
+def first_arrival_ms(played, recorded, sr: int, noise_until: int | None = None) -> float | None:
+    """Delay between the first sample of each signal within 35 dB of its peak.
+
+    ``noise_until`` is a sample index of ``recorded`` before which nothing that
+    was played can have arrived (the pre-roll: playback has not started yet).
+    The recording's peak there is its noise floor, and the arrival threshold is
+    raised to sit above it. Without this, a high-gain amp's hiss crosses the
+    -35 dB line before the first note: on the player's unit that put the
+    "arrival" ~70 ms before the physical 313.5 ms round trip (2026-10-28).
+    """
+    played = np.asarray(played, dtype=np.float64)
+    rec = np.asarray(recorded.mean(axis=1) if np.ndim(recorded) == 2 else recorded, dtype=np.float64)
+    a = _onset_above(played, 0.0, 0)
+    floor, start = 0.0, 0
+    if noise_until:
+        start = min(int(noise_until), len(rec))
+        floor = float(np.max(np.abs(rec[:start]))) if start else 0.0
+    b = _onset_above(rec, floor * NOISE_MARGIN, start)
     if a is None or b is None or b < a:
         return None
     return (b - a) / sr * 1000
 
 
-def measure_latency(played, recorded, sr: int, max_ms: float = 1500.0) -> float | None:
-    """Round trip in ms between ``played`` and ``recorded`` (both start together)."""
-    arrival = first_arrival_ms(played, recorded, sr)
+def _onset_above(x, floor: float, start: int) -> int | None:
+    """First sample at or after ``start`` within 35 dB of the peak and above ``floor``."""
+    level = np.abs(x[start:])
+    peak = float(level.max()) if len(level) else 0.0
+    if peak < 1e-6:
+        return None
+    threshold = max(peak * 10 ** (ONSET_THRESHOLD_DB / 20), floor)
+    if threshold >= peak:
+        return None                       # nothing stands out of the noise
+    return start + int(np.argmax(level >= threshold))
+
+
+def measure_latency(played, recorded, sr: int, max_ms: float = 1500.0,
+                    noise_until: int | None = None) -> float | None:
+    """Round trip in ms between ``played`` and ``recorded`` (both start together).
+
+    The first arrival (see :func:`first_arrival_ms`, noise-aware when
+    ``noise_until`` is given) sharpened by a short waveform correlation; the
+    envelope cross-correlation is only the fallback, because distortion pulls
+    it early (~50 ms on a high-gain amp on the player's unit).
+    """
+    arrival = first_arrival_ms(played, recorded, sr, noise_until=noise_until)
     if arrival is not None and arrival <= max_ms:
         lag = _refine(np.asarray(played, dtype=np.float64), np.asarray(recorded, dtype=np.float64),
                       int(round(arrival / 1000 * sr)), sr, window_ms=3.0)
@@ -181,6 +223,47 @@ def fixed_latency_ms() -> float | None:
     return float(raw) if raw else None
 
 
+#: Calibration burst: short, loud and abrupt, so its arrival is unambiguous
+#: through any grid - distortion, a gate, hiss - unlike the DI's soft attack.
+CAL_BURST_MS = 5.0
+CAL_BURST_DBFS = -12.0
+CAL_REPEATS = 3
+CAL_SPREAD_MS = 1.0
+
+
+def calibrate(renderer, sr: int = SR) -> float | None:
+    """Measure the round trip with a test burst; cached on the renderer.
+
+    The unit's reamp round trip is constant (313.5 ms on the player's unit,
+    four streams, 2026-10-28), but measuring it on the DI itself is not: a
+    high-gain amp's hiss and flattened attack put the DI-based estimates 50-70
+    ms early. So each process calibrates once - ``CAL_REPEATS`` bursts, median,
+    refused if they spread more than ``CAL_SPREAD_MS`` - and aligns every
+    render with that. Plays a short beep through the live grid.
+    """
+    cached = getattr(renderer, "calibrated_latency_ms", None)
+    if cached is not None:
+        return cached
+    t = np.arange(int(CAL_BURST_MS / 1000 * sr)) / sr
+    burst = (10 ** (CAL_BURST_DBFS / 20) * np.sin(2 * np.pi * 1000 * t)).astype(np.float32)
+    padded = np.concatenate([np.zeros(int(0.05 * sr), dtype=np.float32), burst,
+                             np.zeros(int(LATENCY_MARGIN_S * sr), dtype=np.float32)])
+    pre = int(PREROLL_S * sr)
+    played = np.concatenate([np.zeros(pre), padded, np.zeros(int(TAIL_S * sr))])
+    found = []
+    for _ in range(CAL_REPEATS):
+        rec = renderer.playrec(padded, sr)
+        ms = first_arrival_ms(played, rec, sr, noise_until=pre)
+        if ms is None:
+            return None
+        found.append(ms)
+    if max(found) - min(found) > CAL_SPREAD_MS:
+        return None
+    value = float(np.median(found))
+    renderer.calibrated_latency_ms = value
+    return value
+
+
 #: Extra silence played after the DI so the recording still holds the full tail
 #: once the round trip has been trimmed off the front.
 LATENCY_MARGIN_S = 1.0
@@ -194,6 +277,8 @@ def render(renderer, di, sr: int = SR, latency_ms: float | None = None) -> Rende
     di = np.asarray(di, dtype=np.float32)
     mono = di.mean(axis=1) if di.ndim == 2 else di
     padded = np.concatenate([mono, np.zeros(int(LATENCY_MARGIN_S * sr), dtype=np.float32)])
+    if latency_ms is None and fixed_latency_ms() is None:
+        calibrate(renderer, sr)
     rec = renderer.playrec(padded, sr)
     if rec.ndim == 1:
         rec = np.stack([rec, rec], axis=1)
@@ -208,7 +293,9 @@ def render(renderer, di, sr: int = SR, latency_ms: float | None = None) -> Rende
     played = np.concatenate([np.zeros(pre), padded, np.zeros(int(TAIL_S * sr))])
     latency = latency_ms if latency_ms is not None else fixed_latency_ms()
     if latency is None:
-        measured = measure_latency(played, rec, sr)
+        latency = getattr(renderer, "calibrated_latency_ms", None)
+    if latency is None:
+        measured = measure_latency(played, rec, sr, noise_until=pre)
         latency = measured if measured is not None else MEASURED_LATENCY_MS
     start = pre + int(round(latency / 1000 * sr))
     aligned = rec[start: start + len(mono) + int(TAIL_S * sr)]

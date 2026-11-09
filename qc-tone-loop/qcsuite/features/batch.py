@@ -12,18 +12,19 @@ stem for Logic Pro:
 48 kHz, 24-bit, stereo, every file starting at the DI's sample 0 and the same
 length (DI + 2 s tail), so a folder dropped into Logic at bar 1 lines up.
 
-Alignment (idea I): the ~312 ms round trip of a reamp (measured on the
-player's unit) is measured per stem from the FIRST ARRIVAL - the first sample
-of the recording within 35 dB of its peak, against the same point of what was
-played - because the DI starts after silence and the direct sound always
-arrives before any echo. The shared envelope cross-correlation in
-:func:`qcsuite.audio.render.measure_latency` is also computed, for comparison
-only: on the fake it drifted by up to ~80 ms for high-gain presets with a
-delay block (the echoes and the flattened envelope pull its peak), which would
-cut the attack off a stem. When the two disagree by more than a few ms the CSV
-says so, so the stem can be checked by ear. ``QCSUITE_LATENCY_MS`` (a measured
-calibration) overrides both. The latency of every stem goes into the CSV, and a
-spread of more than a few ms within one DI is reported.
+Alignment (idea I): the reamp round trip is constant on the player's unit
+(313.5 ms over four streams, 2026-10-28), but estimating it from the DI is not:
+a high-gain amp's hiss reached the onset threshold before the first note and
+its flattened attack pulled the envelope correlation, putting stems 50-70 ms
+early. So the round trip is calibrated once per process with a short, loud
+test burst (:func:`qcsuite.audio.render.calibrate`: three bursts, median,
+refused if they spread more than 1 ms) and every stem is cut with it. Each
+stem's own first arrival - taken above the noise heard in the pre-roll - is
+still recorded, and when it disagrees with the calibration by more than a few
+ms the CSV says so, so the stem can be checked by ear. Without a calibration
+the first arrival is used, then the envelope correlation.
+``QCSUITE_LATENCY_MS`` overrides all of it. The latency of every stem goes
+into the CSV.
 
 A render that comes back as the DI (passthrough), or a preset holding a block
 from an unowned plugin, is still written - never dropped silently - but its
@@ -112,18 +113,12 @@ def create(rig, dis: list[str], presets: list[str] | None = None, folder: str | 
 
 
 #: Within this much of a signal's peak counts as its first arrival.
-ONSET_THRESHOLD_DB = -35.0
+ONSET_THRESHOLD_DB = render.ONSET_THRESHOLD_DB
 
 
-def first_arrival_ms(played, recorded, sr: int) -> float | None:
-    """Round trip from the first sample of each signal within 35 dB of its peak."""
-    from qctone.audio_io import onset
-    rec = recorded.mean(axis=1) if recorded.ndim == 2 else recorded
-    a = onset(np.asarray(played), ONSET_THRESHOLD_DB)
-    b = onset(np.asarray(rec), ONSET_THRESHOLD_DB)
-    if a is None or b is None or b < a:
-        return None
-    return (b - a) / sr * 1000
+def first_arrival_ms(played, recorded, sr: int, noise_until: int | None = None) -> float | None:
+    """Round trip from the first arrival; see :func:`qcsuite.audio.render.first_arrival_ms`."""
+    return render.first_arrival_ms(played, recorded, sr, noise_until=noise_until)
 
 
 def reamp_aligned(rig, di, sr: int) -> tuple[render.RenderResult, dict]:
@@ -138,6 +133,8 @@ def reamp_aligned(rig, di, sr: int) -> tuple[render.RenderResult, dict]:
         rig.device.notice("sound_change", render.MONITOR_WARNING)
         rig.warned_monitor = True
     with rig.device._lock:
+        if render.fixed_latency_ms() is None:
+            render.calibrate(rig.renderer, sr)
         rec = rig.renderer.playrec(padded, sr)
     if rec.ndim == 1:
         rec = np.stack([rec, rec], axis=1)
@@ -151,10 +148,13 @@ def reamp_aligned(rig, di, sr: int) -> tuple[render.RenderResult, dict]:
     pre = int(render.PREROLL_S * sr)
     played = np.concatenate([np.zeros(pre), padded, np.zeros(int(render.TAIL_S * sr))])
     fixed = render.fixed_latency_ms()
-    first = first_arrival_ms(played, rec, sr)
-    corr = render.measure_latency(played, rec, sr)
+    first = first_arrival_ms(played, rec, sr, noise_until=pre)
+    corr = render._envelope_latency(played, rec, sr, 1500.0)
+    calibrated = getattr(rig.renderer, "calibrated_latency_ms", None)
     if fixed is not None:
         latency, method = fixed, "QCSUITE_LATENCY_MS"
+    elif calibrated is not None:
+        latency, method = calibrated, "calibration"
     elif first is not None:
         latency, method = first, "first_arrival"
     else:
@@ -167,7 +167,12 @@ def reamp_aligned(rig, di, sr: int) -> tuple[render.RenderResult, dict]:
                                  mock=rig.renderer.mock)
     diag = {"method": method, "first_arrival_ms": None if first is None else round(first, 2),
             "correlation_ms": None if corr is None else round(float(corr), 2)}
-    if first is not None and corr is not None and abs(first - corr) > LATENCY_SPREAD_WARN_MS:
+    if calibrated is not None:
+        diag["calibration_ms"] = round(calibrated, 2)
+        if first is not None and abs(first - calibrated) > LATENCY_SPREAD_WARN_MS:
+            diag["disagreement"] = (f"この音の先頭の到着は {first:.1f} ms で、較正値 {calibrated:.1f} ms と"
+                                    "ずれています。較正値でそろえました(歪みやノイズで先頭がずれることがあります)。")
+    elif first is not None and corr is not None and abs(first - corr) > LATENCY_SPREAD_WARN_MS:
         diag["disagreement"] = (f"相互相関では {corr:.1f} ms(先頭の到着からは {first:.1f} ms)。"
                                 "先頭の到着でそろえました。DI と並べて聴いて確認してください。")
     return result, diag
