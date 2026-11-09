@@ -662,3 +662,22 @@ def test_python_and_js_agree_on_display_rules(tmp_path):
         assert angle == pytest.approx(editor.knob_angle(p, v), abs=1e-6), (p, v)
 
 
+
+
+def test_switch_without_names_is_refused_by_value_on_every_route(device, fake):
+    del fake.live.chains[0].models[0].params[8].dynamic_steps[:]
+    s = editor.EditorSession()
+    with pytest.raises(editor.EditorError, match="スイッチ"):
+        s.set(device, {"row": 0, "col": 0, "model_id": 1038, "param": "CHANNEL", "real": 1.0})
+    with pytest.raises(editor.EditorError, match="スイッチ"):
+        s.begin(device, {"row": 0, "col": 0, "model_id": 1038, "param": "CHANNEL"})
+    assert panel.history_view(True) == []
+
+
+def test_block_swapped_mid_drag_is_a_conflict_at_end(device):
+    s = editor.EditorSession()
+    g = s.begin(device, {"row": 0, "col": 0, "model_id": 1038, "param": "BASS"})
+    device.apply_patch({"ops": [{"op": "set_block", "row": 0, "col": 0, "model": 1001}]})
+    with pytest.raises(editor.EditorConflict):
+        s.end(device, g["gesture"], {"real": 9.0})
+    assert panel.history_view(True) == []

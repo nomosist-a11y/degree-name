@@ -170,6 +170,7 @@ async function loadGrid() {
     } finally {
       ED.loading = null;
     }
+    if (ED.gesture) { ED.reloadWanted = true; return; }   // a drag began while reading
     if (!findBlock(ED.sel)) {
       const b = firstBlock();
       ED.sel = b ? { row: b.row, col: b.col, model_id: b.model_id } : null;

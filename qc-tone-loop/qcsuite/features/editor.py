@@ -461,6 +461,15 @@ def _commit(device, before: dict, block: dict, op: dict, extra_note: str = "") -
             "note": "保存はしていません。本体でプリセットを呼び出し直すと元に戻ります。"}
 
 
+def _refuse_switch_by_value(op: dict, grid: dict, device):
+    """Switches move only by option name, even when the preset has no names for them."""
+    if op["op"] != "set_param":
+        return
+    problems = panel.switch_violations([op], grid, device.catalog)
+    if problems:
+        raise EditorError("\n".join(problems))
+
+
 class EditorSession:
     """Gestures in flight for one web app (one unit)."""
 
@@ -477,6 +486,7 @@ class EditorSession:
         before = device.grid()
         block = _locate(before, req)
         op, param = build_op(block, req)
+        _refuse_switch_by_value(op, before, device)
         _check_expect(block, param, req.get("expect"), req.get("param") or "バイパス")
         return _commit(device, before, block, op)
 
@@ -490,6 +500,8 @@ class EditorSession:
         param = _param(block, name)
         if param is None or "text" in param or "options" in param or "option" in param:
             raise EditorError(f"{name} はドラッグで動かせるつまみではありません。")
+        _refuse_switch_by_value({"op": "set_param", "row": block["row"], "col": block["col"],
+                                 "param": param["name"], "value": 0.0}, before, device)
         _check_expect(block, param, req.get("expect"), name)
         device.policy.check_grid("グリッドの編集")
         g = SimpleNamespace(id=uuid.uuid4().hex[:10], row=block["row"], col=block["col"],
@@ -543,6 +555,8 @@ class EditorSession:
         with g.send_lock:                         # waits for a move in flight
             with self._lock:
                 self._gestures.pop(g.id, None)
+            # The block may have been swapped on the unit's screen mid-drag.
+            _locate(device.grid(), {"row": g.row, "col": g.col, "model_id": g.model_id})
             op = _knob_op(g.block, _param(g.block, g.param), g.param, amount)
             return _commit(device, g.before, g.block, op)
 
