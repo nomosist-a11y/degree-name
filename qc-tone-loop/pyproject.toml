@@ -34,7 +34,7 @@ packages = ["qctone", "qcsuite", "qcsuite.device", "qcsuite.audio", "qcsuite.fea
             "qcsuite.web", "qcsuite.web.routes"]
 
 [tool.setuptools.package-data]
-qcsuite = ["web/static/*"]
+qcsuite = ["web/static/*", "device/*.xml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

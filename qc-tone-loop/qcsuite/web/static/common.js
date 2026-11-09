@@ -4,7 +4,7 @@
 const PAGES = [
   ["index", "ホーム"], ["library", "プリセット管理"], ["backup", "バックアップ"],
   ["leveler", "音量そろえ"], ["tournament", "ブラインド比較"], ["panel", "言葉で操作"],
-  ["sweep", "スイープ"], ["sheets", "資料"], ["setlist", "セットリスト"],
+  ["editor", "エディター"], ["sweep", "スイープ"], ["sheets", "資料"], ["setlist", "セットリスト"],
   ["batch", "一括リアンプ"], ["health", "健康診断"], ["watch", "編集ウォッチャー"],
   ["jobs", "ジョブ"],
 ];

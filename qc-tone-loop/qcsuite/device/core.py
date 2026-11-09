@@ -234,6 +234,52 @@ class Device:
                 self.notice(INERT_WRITE, w)
             return {"applied": len(ops), "warnings": warnings}
 
+    def set_knob(self, row: int, col: int, model_id: int, param: str,
+                 real: float | None = None, value: float | None = None):
+        """One numeric knob, sent at once - the editor's in-drag updates.
+
+        Lighter than :meth:`apply_patch` (no grid read per call), so a drag can
+        stream at ~10 writes a second. The caller has checked the block
+        (``model_id`` at ``row``/``col``) against a fresh grid when the gesture
+        began, and ends the gesture with an :meth:`apply_patch` of the final
+        value, which validates against the live grid again. Switches are
+        refused here: they move only by option name. Not retried (the unit
+        answers writes with silence; the final value is what counts).
+        """
+        self.policy.check_grid("グリッドの編集")
+        if (real is None) == (value is None):
+            raise qdevice.PatchError("give exactly one of 'real' or 'value'")
+        with self._lock:
+            model = self.catalog.get(model_id)
+            if model is None:
+                raise qdevice.PatchError(f"block model {model_id} not in catalog")
+            try:
+                spec = model.parameter(param)
+            except KeyError as exc:
+                raise qdevice.PatchError(exc.args[0]) from None
+            if spec.option_count or spec.type in ("switch", "comboBox", "rotarySwitch"):
+                raise qdevice.PatchError(f"{spec.name} is a switch: set it by option name")
+            if real is not None:
+                if spec.range_is_placeholder:
+                    raise qdevice.PatchError(f"{spec.name} has no real-unit range; use 'value'")
+                real = min(spec.maximum, max(spec.minimum, float(real)))
+                self.qc.set_param(row, col, param=spec.name, model=model, real=real)
+            else:
+                value = min(1.0, max(0.0, float(value)))
+                self.qc.set_param(row, col, param=spec.name, model=model, value=value)
+
+    def model_repo_payload(self) -> bytes | None:
+        """The unit's raw ModelRepo payload (gzip(tar(xml))), or None.
+
+        Uses pyquadcortex's PRIVATE ``_fetch_model_repo``; callers must cope
+        with ``None`` or an exception (see :mod:`qcsuite.features.modelrepo`).
+        A read: nothing on the unit changes. Asked once per firmware version.
+        """
+        fetch = getattr(self.qc, "_fetch_model_repo", None)
+        if fetch is None:
+            return None
+        return self._retry("モデル一覧(ModelRepo)の取得", fetch, attempts=2)
+
     def _inert_warnings(self, ops, grid, catalog) -> list[str]:
         """Writes that will read back fine but not change the sound."""
         cells = {(b["row"], b["col"]): b["model_id"] for b in grid["blocks"]}

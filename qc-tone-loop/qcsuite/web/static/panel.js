@@ -63,7 +63,8 @@ function showPreview(p) {
 async function loadHistory() {
   const rows = await api("/api/panel/history");
   document.getElementById("history").replaceChildren(rows.length ? table(rows.slice().reverse(), [
-    ["at", "時刻"], ["instruction", "指示"], ["engine", "変換"],
+    ["at", "時刻"], ["instruction", "指示"],
+    ["engine", "変換", v => ({ rules: "ルール", claude: "Claude", editor: "エディター" })[v] || v || ""],
     ["summary", "内容", v => (v || []).join(" / ")],
     ["undone", "状態", v => v ? "取り消し済み" : "適用中"],
   ]) : el("p", { class: "muted small" }, "(まだありません)"));
@@ -149,6 +150,11 @@ document.addEventListener("keydown", e => {
   if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
   if (e.key === "a" || e.key === "A") document.getElementById("abA").click();
   if (e.key === "b" || e.key === "B") document.getElementById("abB").click();
+});
+
+// Changes made in the エディター tab show up when this tab is shown again.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshAll().catch(() => {});
 });
 
 renderHeader("panel").then(() => { loadEngines(); refreshAll(); });

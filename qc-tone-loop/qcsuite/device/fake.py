@@ -343,6 +343,22 @@ class FakeQuadCortex:
         msg.device_serial_number = "FAKE-QC-0001"
         return msg
 
+    def _fetch_model_repo(self, timeout: float = 25.0) -> bytes:
+        """gzip(tar(ModelRepo.xml)) like the unit sends; the XML is the hand-written
+        ``fake_model_repo.xml`` (mirrors this fake's synthetic catalog)."""
+        import gzip
+        import io
+        import tarfile
+        self._log("_fetch_model_repo")
+        self._wait(2.0)
+        xml = (Path(__file__).parent / "fake_model_repo.xml").read_bytes()
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tf:
+            info = tarfile.TarInfo("ModelRepo.xml")
+            info.size = len(xml)
+            tf.addfile(info, io.BytesIO(xml))
+        return gzip.compress(buf.getvalue())
+
     def list_folders(self, seconds: float = 20.0) -> list:
         self._log("list_folders")
         self._wait(min(seconds, 15.0))

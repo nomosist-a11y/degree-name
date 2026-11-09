@@ -23,5 +23,5 @@ Rules every feature keeps:
 """
 
 #: Module names, in the order the CLI lists them.
-MODULES = ["dilib", "library", "backup", "leveler", "tournament", "panel", "sweep",
+MODULES = ["dilib", "library", "backup", "leveler", "tournament", "panel", "editor", "sweep",
            "sheets", "setlist", "batch", "health", "watch", "research"]
