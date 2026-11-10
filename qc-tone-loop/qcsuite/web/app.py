@@ -182,6 +182,11 @@ def create_app(mock: bool = False, allow_folders=(), fake=None) -> FastAPI:
                     return _error(409, f"ジョブ {busy} の実行中なので、グリッドを変える操作はできません。"
                                        "終わるか中断してから実行してください。")
         response = await call_next(request)
+        if path.startswith("/static/") or path == "/":
+            # Revalidate every time (cheap: ETag -> 304). Without this the app
+            # window kept a cached common.js after an update, so a new tab (the
+            # editor, 2026-11-10) did not appear until a hard reload.
+            response.headers["Cache-Control"] = "no-cache"
         if not path.startswith("/api/") and request.cookies.get(SESSION_COOKIE) != token:
             response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="strict")
         return response

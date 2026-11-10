@@ -909,3 +909,12 @@ def test_row_fed_by_another_row_shows_prev_row(device):
     rows = editor.view(device)["rows"]
     assert rows[2]["in_port"] == "PREV_ROW" and rows[3]["in_port"] == "EMPTY"
     assert editor._feeds("NEXT_ROW_3_4", 3) and not editor._feeds("XLR_1_2", 2)
+
+
+def test_pages_are_revalidated_so_new_tabs_show_after_an_update(client):
+    """2026-11-10: after the editor was merged the app window kept a cached
+    common.js and showed no エディター tab until a hard reload."""
+    for path in ("/static/common.js", "/static/editor.html"):
+        r = client.get(path)
+        assert r.status_code == 200 and r.headers.get("cache-control") == "no-cache"
+    assert "editor" in client.get("/static/common.js").text
