@@ -18,8 +18,16 @@ Patch format (``ops`` run in order)::
        {"op": "remove_block", "row": 0, "col": 6},
        {"op": "bypass",     "row": 0, "col": 1, "bypassed": true},
        {"op": "set_input",  "row": 0, "port": "USB_5"},
-       {"op": "set_output", "row": 0, "port": "XLR_1_2"}
+       {"op": "set_output", "row": 0, "port": "XLR_1_2"},
+       {"op": "move_block", "row": 0, "col": 2, "to_row": 0, "to_col": 5},
+       {"op": "set_split",  "row": 0, "split": 2, "mix": 6},
+       {"op": "clear_split", "row": 0}
      ]}
+
+``move_block`` needs an empty target cell (the block keeps its knobs, bypass
+and capture). A move to another row makes the unit create a parallel path by
+itself (pyquadcortex). ``set_split`` / ``clear_split`` are for rows 0 and 2
+(``mix`` -1 = a lane that never rejoins).
 
 Rows and columns are zero-based (the unit shows rows 1-4). ``real`` is in the
 parameter's own units (dB, Hz, ms, %); ``value`` is the normalized 0..1.
@@ -32,7 +40,7 @@ from contextlib import contextmanager
 
 ROWS, COLUMNS = 4, 8
 OPS = {"set_param", "set_option", "set_block", "remove_block", "bypass",
-       "set_input", "set_output"}
+       "set_input", "set_output", "move_block", "set_split", "clear_split"}
 
 
 class PatchError(ValueError):
@@ -95,12 +103,17 @@ def snapshot(qc) -> dict:
     p = qc.read_current_preset()
     scene = int(qc.active_scene())
     rows = []
+    splits = {s.row: s for s in pq.splits(p)}
     for i, chain in enumerate(p.chains):
-        rows.append({
+        row = {
             "row": i,
             "in_port": _port_name(pq.Input, chain.in_portid),
             "out_port": _port_name(pq.Output, chain.out_portid),
-        })
+        }
+        if i % 2 == 0:
+            sp = splits.get(i)
+            row["split"] = [sp.split_column, sp.mix_column] if sp else None
+        rows.append(row)
     out_blocks = []
     for b in pq.blocks(p):
         model = qc.catalog.get(b.model_id)
@@ -194,6 +207,16 @@ def validate(patch: dict, grid: dict, catalog) -> list:
         if not isinstance(row, int) or not 0 <= row < ROWS:
             raise PatchError(f"{where}: row must be 0-{ROWS - 1}")
         op = dict(op)
+        if kind in ("set_split", "clear_split"):
+            if row % 2:
+                raise PatchError(f"{where}: a split exists only on row 1 or 3 (0 or 2 zero-based)")
+            if kind == "set_split":
+                sc, mc = op.get("split"), op.get("mix")
+                if not isinstance(sc, int) or not 0 <= sc < COLUMNS or not isinstance(mc, int) \
+                        or not (mc == -1 or sc < mc < COLUMNS):
+                    raise PatchError(f"{where}: need split 0-{COLUMNS - 1} and mix > split (or -1)")
+            resolved.append(op)
+            continue
         if kind in ("set_input", "set_output"):
             enum = pq.Input if kind == "set_input" else pq.Output
             try:
@@ -205,6 +228,18 @@ def validate(patch: dict, grid: dict, catalog) -> list:
         col = op.get("col")
         if not isinstance(col, int) or not 0 <= col < COLUMNS:
             raise PatchError(f"{where}: col must be 0-{COLUMNS - 1}")
+        if kind == "move_block":
+            to_row, to_col = op.get("to_row"), op.get("to_col")
+            if not isinstance(to_row, int) or not 0 <= to_row < ROWS or \
+                    not isinstance(to_col, int) or not 0 <= to_col < COLUMNS:
+                raise PatchError(f"{where}: to_row 0-{ROWS - 1} and to_col 0-{COLUMNS - 1} needed")
+            if (row, col) not in cells:
+                raise PatchError(f"{where}: no block at row {row} col {col}")
+            if (to_row, to_col) in cells:
+                raise PatchError(f"{where}: row {to_row} col {to_col} is not empty")
+            cells[(to_row, to_col)] = cells.pop((row, col))
+            resolved.append(op)
+            continue
         if kind == "set_block":
             op["model_id"] = resolve_model(catalog, op["model"]).id
             cells[(row, col)] = op["model_id"]
@@ -267,14 +302,69 @@ def apply(qc, ops: list):
             qc.set_chain_input(row, op["port_id"])
         elif kind == "set_output":
             qc.set_chain_output(row, op["port_id"])
+        elif kind == "move_block":
+            qc.move_block(row, op["col"], op["to_row"], op["to_col"])
+        elif kind == "set_split":
+            qc.set_split(row, op["split"], op["mix"])
+        elif kind == "clear_split":
+            qc.clear_split(row)
+
+
+def _moves(saved: dict, current: dict) -> tuple[list, dict]:
+    """``move_block`` ops that put blocks back where ``saved`` has them.
+
+    A block that only changed cell is moved, not removed and re-placed, so its
+    capture, IR and any value a re-placement would lose come back with it. A
+    swap (or any cycle) goes through a free cell. Returns the ops and the
+    grid as it will be after them (blocks keyed by cell).
+    """
+    cur = {(b["row"], b["col"]): b for b in current["blocks"]}
+    sav = {(b["row"], b["col"]): b for b in saved["blocks"]}
+
+    def wrong(cell):
+        a, b = cur.get(cell), sav.get(cell)
+        return (a["model_id"] if a else None) != (b["model_id"] if b else None)
+
+    def free_cell(near_row):
+        cells = [(r, c) for r in [near_row] + [r for r in range(ROWS) if r != near_row]
+                 for c in range(COLUMNS)]
+        return next((x for x in cells if x not in cur and x not in sav), None) or \
+            next((x for x in cells if x not in cur), None)
+
+    ops = []
+
+    def move(a, b):
+        blk = dict(cur.pop(a), row=b[0], col=b[1])
+        cur[b] = blk
+        ops.append({"op": "move_block", "row": a[0], "col": a[1], "to_row": b[0], "to_col": b[1]})
+
+    for _ in range(4 * ROWS * COLUMNS):
+        targets = [t for t in sav if wrong(t)]
+        sources = [c for c in cur if wrong(c)]
+        step = next(((c, t) for t in targets if t not in cur for c in sources
+                     if cur[c]["model_id"] == sav[t]["model_id"]), None)
+        if step:
+            move(*step)
+            continue
+        # a cycle: park one blocker that some other block needs to get into
+        blocked = next((t for t in targets if t in cur and any(
+            cur[c]["model_id"] == sav[t]["model_id"] for c in sources if c != t)), None)
+        if blocked is None:
+            break
+        spot = free_cell(blocked[0])
+        if spot is None:
+            break
+        move(blocked, spot)
+    return ops, {"rows": current["rows"], "blocks": list(cur.values())}
 
 
 def restore_ops(saved: dict, current: dict) -> dict:
     """A patch that turns the ``current`` grid back into ``saved``.
 
-    Re-places blocks whose model changed, removes blocks added since, and
-    rewrites every numeric parameter and bypass state. Routing is restored
-    too. String parameters (capture files, IRs) are not touched.
+    Moves blocks that only changed cell, re-places blocks whose model changed,
+    removes blocks added since, and rewrites every numeric parameter and
+    bypass state. Routing and splits are restored too. String parameters
+    (capture files, IRs) are not touched (a moved block keeps its own).
     """
     ops = []
     for row in saved["rows"]:
@@ -283,6 +373,19 @@ def restore_ops(saved: dict, current: dict) -> dict:
             ops.append({"op": "set_input", "row": row["row"], "port": row["in_port"]})
         if now["out_port"] != row["out_port"]:
             ops.append({"op": "set_output", "row": row["row"], "port": row["out_port"]})
+    moves, current = _moves(saved, current)
+    ops += moves
+    for row in saved["rows"]:
+        now = next(r for r in current["rows"] if r["row"] == row["row"])
+        if "split" in row and (moves or now.get("split") != row["split"]):
+            # a move across rows makes the unit branch by itself, so after a
+            # move the saved split is written whatever the old reading said
+            if row["split"] is None:
+                if moves or now.get("split") is not None:
+                    ops.append({"op": "clear_split", "row": row["row"]})
+            else:
+                ops.append({"op": "set_split", "row": row["row"], "split": row["split"][0],
+                            "mix": row["split"][1]})
     for b in current["blocks"]:
         if _block_at(saved, b["row"], b["col"]) is None:
             ops.append({"op": "remove_block", "row": b["row"], "col": b["col"]})

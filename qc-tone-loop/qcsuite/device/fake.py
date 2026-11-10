@@ -721,6 +721,49 @@ class FakeQuadCortex:
             self.live_audible.pop((row, column), None)
             self.dirty = True
 
+    def move_block(self, from_row: int, from_col: int, to_row: int, to_col: int,
+                   drop: bool = True):
+        """Like the unit: the block, its knobs and its bypass go to the new cell.
+
+        A move to an occupied cell is not modelled (qcsuite never sends one).
+        A move to another row branches the source row like the unit did on
+        "Brit 2203" (pyquadcortex: Split(row=0, split_column=0, mix_column=7))
+        when the target is the source row's parallel lane.
+        """
+        self._log("move_block", from_row, from_col, to_row, to_col)
+        with self._lock:
+            src = self.live.chains[from_row].models[from_col]
+            dst = self.live.chains[to_row].models[to_col]
+            if not src.hash or dst.hash:
+                return
+            dst.CopyFrom(src)
+            src.Clear()
+            sb = self.live.bypass[from_row].colBypass[from_col]
+            db = self.live.bypass[to_row].colBypass[to_col]
+            db.CopyFrom(sb)
+            for b in sb.sceneBypass:
+                b.bypass = False
+            sound = self.live_audible.pop((from_row, from_col), None)
+            if sound is not None:
+                self.live_audible[(to_row, to_col)] = sound
+            if to_row != from_row and from_row % 2 == 0 and to_row == from_row + 1:
+                scp = self.live.chains[from_row].split_control_points[0]
+                if scp.split < 0:
+                    scp.split, scp.mix = 0, COLUMNS - 1
+            self.dirty = True
+
+    def set_split(self, row: int, split_column: int, mix_column: int):
+        self._log("set_split", row, split_column, mix_column)
+        if row % 2:
+            raise ValueError("a splitter exists only on row 0 or 2")
+        with self._lock:
+            scp = self.live.chains[row].split_control_points[0]
+            scp.split, scp.mix = int(split_column), int(mix_column)
+            self.dirty = True
+
+    def clear_split(self, row: int):
+        self.set_split(row, -1, -1)
+
     def set_bypass(self, row: int, column: int, bypassed: bool, scene=None):
         self._log("set_bypass", row, column, bypassed)
         with self._lock:

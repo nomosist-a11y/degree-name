@@ -259,6 +259,7 @@ def block_view(block: dict, catalog, repo, preset) -> dict:
             "color": modelrepo.color_key(category),
             "based_on": (rmodel.based_on if rmodel else "") or (model.based_on if model else ""),
             "bypassed": block.get("bypassed"), "responds": responds, "flags": flags,
+            "lossy": _lossy(block),
             "params": params}
 
 
@@ -302,6 +303,8 @@ def view(device, repo="load") -> dict:
         if in_port == "EMPTY" and any(_feeds(o["out_port"], r["row"]) for o in grid["rows"]):
             in_port = "PREV_ROW"        # the unit shows "Prev. row" for a row fed by another
         rows.append({"row": r["row"], "in_port": in_port, "out_port": r["out_port"],
+                     "in_label": port_label(in_port), "out_label": port_label(r["out_port"]),
+                     "split": r.get("split"),
                      "is_input": in_port not in ("EMPTY",),
                      "reaches_output": r["out_port"] in panel.REACHES_OUT, "cells": line})
     labels = list(getattr(preset, "scene_labels", []) or [])
@@ -309,6 +312,8 @@ def view(device, repo="load") -> dict:
             "preset": {"name": getattr(preset, "name", "") or "",
                        "dirty": device.preset_dirty()},
             "scene_labels": [str(x) for x in labels[:8]],
+            "ports": {"in": [{"id": p, "label": port_label(p)} for p in PORTS_IN],
+                      "out": [{"id": p, "label": port_label(p)} for p in PORTS_OUT]},
             "tempo": round(float(getattr(preset, "tempo", 0) or 0), 1) or None,
             "note": NOT_SAVED}
 
@@ -378,6 +383,35 @@ def _locate(grid: dict, req: dict) -> dict:
         raise EditorConflict(f"行{row + 1} 列{col + 1} のブロックが画面と違います(本体側で変わった"
                              "可能性があります)。何も書き込まず、画面を読み直します。")
     return block
+
+
+def _lossy(block: dict) -> bool:
+    """A block whose state includes a string (capture file, IR): lost on re-placing."""
+    return block["model_id"] in inert.CAPTURE_MODELS or \
+        any("text" in p and p.get("text") for p in block.get("params") or [])
+
+
+PORTS_IN = ["EMPTY", "INPUT_1", "INPUT_2", "INPUT_1_2", "RETURN_1", "RETURN_2", "RETURN_1_2",
+            "USB_5", "USB_6", "USB_7", "USB_8", "USB_5_6", "USB_7_8"]
+PORTS_OUT = ["EMPTY", "XLR_1_2", "OUT_3_4", "SEND_1_2", "XLR_1", "XLR_2", "OUT_3", "OUT_4",
+             "SEND_1", "SEND_2", "USB_3", "USB_4", "USB_3_4", "USB_5", "USB_6", "USB_7",
+             "USB_8", "USB_5_6", "USB_7_8", "NEXT_ROW_3", "NEXT_ROW_4", "NEXT_ROW_3_4",
+             "MULTIPLE"]
+_PORT_LABEL = {"EMPTY": "なし", "INPUT_1": "In 1", "INPUT_2": "In 2", "INPUT_1_2": "In 1/2",
+               "RETURN_1": "Return 1", "RETURN_2": "Return 2", "RETURN_1_2": "Return 1/2",
+               "PREV_ROW": "Prev. row", "XLR_1_2": "Out 1/2", "OUT_3_4": "Out 3/4",
+               "SEND_1_2": "Send 1/2", "XLR_1": "Out 1", "XLR_2": "Out 2", "OUT_3": "Out 3",
+               "OUT_4": "Out 4", "SEND_1": "Send 1", "SEND_2": "Send 2",
+               "NEXT_ROW_3": "次の行へ(3)", "NEXT_ROW_4": "次の行へ(4)",
+               "NEXT_ROW_3_4": "次の行へ(3/4)", "MULTIPLE": "Multi Out"}
+
+
+def port_label(port: str) -> str:
+    if port in _PORT_LABEL:
+        return _PORT_LABEL[port]
+    if port.startswith("USB_"):
+        return "USB " + port[4:].replace("_", "/")
+    return port
 
 
 def _current(param: dict):
@@ -627,6 +661,232 @@ class EditorSession:
         return {"id": entry_id, "model_id": new_id, "warnings": result["warnings"],
                 "note": NOT_SAVED}
 
+    # -- grid layout (Cortex Control's drag & drop, delete, copy / paste) -------------
+
+    def layout(self, device, action: str, req: dict) -> dict:
+        """move / delete / paste / duplicate / reset / port / split: one undo step each."""
+        handler = {"move": self._relocate, "delete": self._delete, "paste": self._paste,
+                   "duplicate": self._duplicate, "reset": self._reset, "port": self._port,
+                   "split": self._split}.get(action)
+        if handler is None:
+            raise EditorError(f"知らない操作です: {action}")
+        with self._edit:
+            self._wait_idle(device)
+            return handler(device, _read(device), req)
+
+    def _layout_commit(self, device, before: dict, ops: list, label: str,
+                       expect: dict | None = None, notes=()) -> dict:
+        """Apply ``ops`` as one patch, read back, record one history entry.
+
+        ``expect`` maps (row, col) -> model id (None = empty) that must hold
+        afterwards; a mismatch is reported (the entry stays, so undo works).
+        """
+        result = device.apply_patch({"note": "editor", "ops": ops})
+        after = _read(device)
+        warnings = list(result["warnings"]) + list(notes)
+        for (row, col), model_id in (expect or {}).items():
+            got = _block(after, row, col)
+            if (got["model_id"] if got else None) != model_id:
+                warnings.append(f"行{row + 1} 列{col + 1}: 本体の配置が想定と違います"
+                                "(読み戻した結果を表示しています。取り消しで元に戻せます)。")
+        entry_id = panel.record(device.mock, {"note": "editor", "ops": ops}, before, after,
+                                instruction=label, engine=ENGINE, summary=[label],
+                                warnings=warnings)
+        return {"id": entry_id, "warnings": warnings, "note": NOT_SAVED}
+
+    @staticmethod
+    def _cell(req: dict, prefix: str = "") -> tuple[int, int]:
+        row, col = req.get(f"{prefix}row"), req.get(f"{prefix}col")
+        if not isinstance(row, int) or not isinstance(col, int) or \
+                not 0 <= row < qdevice.ROWS or not 0 <= col < qdevice.COLUMNS:
+            raise EditorError(f"{prefix}row / {prefix}col を正しく指定してください。")
+        return row, col
+
+    @staticmethod
+    def _free_cell(grid: dict, row: int, avoid=()) -> tuple[int, int] | None:
+        used = {(b["row"], b["col"]) for b in grid["blocks"]} | set(avoid)
+        order = [row] + [r for r in range(qdevice.ROWS) if r != row]
+        return next(((r, c) for r in order for c in range(qdevice.COLUMNS)
+                     if (r, c) not in used), None)
+
+    def _relocate(self, device, before: dict, req: dict) -> dict:
+        block = _locate(before, req)
+        src = (block["row"], block["col"])
+        dst = self._cell(req, "to_")
+        if dst == src:
+            return {"id": None, "warnings": [], "note": NOT_SAVED}
+        other = _block(before, *dst)
+        if other is not None and other["model_id"] != req.get("to_model_id", other["model_id"]):
+            raise EditorConflict(f"行{dst[0] + 1} 列{dst[1] + 1} のブロックが画面と違います。"
+                                 "何も書き込まず、画面を読み直します。")
+        if other is None:
+            ops = [{"op": "move_block", "row": src[0], "col": src[1],
+                    "to_row": dst[0], "to_col": dst[1]}]
+            label = f"エディター: {block['model']} を 行{src[0] + 1} 列{src[1] + 1} → " \
+                    f"行{dst[0] + 1} 列{dst[1] + 1} へ移動"
+            expect = {src: None, dst: block["model_id"]}
+        else:
+            # Swap, like dropping a block onto another in Cortex Control: park the
+            # target in a free cell (same row first), move, then bring it back.
+            park = self._free_cell(before, dst[0], avoid=(src, dst))
+            if park is None:
+                raise EditorError("グリッドに空きマスが無いので入れ替えられません。")
+            ops = [{"op": "move_block", "row": dst[0], "col": dst[1], "to_row": park[0],
+                    "to_col": park[1]},
+                   {"op": "move_block", "row": src[0], "col": src[1], "to_row": dst[0],
+                    "to_col": dst[1]},
+                   {"op": "move_block", "row": park[0], "col": park[1], "to_row": src[0],
+                    "to_col": src[1]}]
+            label = f"エディター: {block['model']} と {other['model']} を入れ替え" \
+                    f"(行{src[0] + 1} 列{src[1] + 1} ⇄ 行{dst[0] + 1} 列{dst[1] + 1})"
+            expect = {src: other["model_id"], dst: block["model_id"]}
+        notes = []
+        if dst[0] != src[0] or (other is not None and park[0] != dst[0]):
+            notes.append("行をまたぐ移動では、本体が並列の経路(分岐)を自動で作ることがあります。"
+                         "グリッドの分岐の表示を確かめてください。")
+        return self._layout_commit(device, before, ops, label, expect, notes)
+
+    def _delete(self, device, before: dict, req: dict) -> dict:
+        block = _locate(before, req)
+        op = {"op": "remove_block", "row": block["row"], "col": block["col"]}
+        notes = []
+        if _lossy(block):
+            notes.append("取り消しても、キャプチャー・IR などの選択(文字列)は戻りません。")
+        label = f"エディター: {_where(block)} {block['model']} を削除"
+        return self._layout_commit(device, before, [op], label,
+                                   {(block["row"], block["col"]): None}, notes)
+
+    def _paste_ops(self, device, source: dict, row: int, col: int, target) -> tuple[list, list]:
+        """Ops that make the cell a copy of ``source`` (a block from GET /block)."""
+        model_id = source.get("model_id")
+        model = device.catalog.get(model_id) if isinstance(model_id, int) else None
+        if model is None:
+            raise EditorError("コピーしたブロックのモデルが、この本体にありません。")
+        if model_id in inert.CAPTURE_MODELS or str(model.category).startswith("Neural Capture"):
+            raise EditorError("キャプチャーのブロックはコピーできません(パソコンから選んだキャプチャーは"
+                              "鳴らないため)。本体で複製してください。")
+        entry = _listing_entry(device, model_id)
+        if entry is not None and not entry["usable"]:
+            raise EditorError(f"{entry['name']}: {entry['why_not']}")
+        ops, notes = [], []
+        if target is None or target["model_id"] != model_id:
+            ops.append({"op": "set_block", "row": row, "col": col, "model": model_id})
+        names = {spec.name for spec in model.parameters}
+        skipped = []
+        for prm in source.get("params") or []:
+            name = prm.get("name")
+            if name not in names:
+                continue
+            if "text" in prm:
+                skipped.append(name)
+            elif "options" in prm and prm.get("option") in (prm.get("options") or []):
+                ops.append({"op": "set_option", "row": row, "col": col, "param": name,
+                            "option": prm["option"]})
+            elif "option" in prm:
+                skipped.append(name)          # a switch without option names: never by value
+            elif isinstance(prm.get("value"), (int, float)) and 0 <= prm["value"] <= 1:
+                ops.append({"op": "set_param", "row": row, "col": col, "param": name,
+                            "value": float(prm["value"])})
+        if isinstance(source.get("bypassed"), bool):
+            ops.append({"op": "bypass", "row": row, "col": col, "bypassed": source["bypassed"]})
+        if skipped:
+            notes.append("コピーしなかった項目(文字列か、選択肢の名前が分からないスイッチ): "
+                         + "、".join(skipped))
+        return ops, notes
+
+    def _paste(self, device, before: dict, req: dict) -> dict:
+        row, col = self._cell(req)
+        target = _block(before, row, col)
+        if (target["model_id"] if target else None) != req.get("model_id"):
+            raise EditorConflict(f"行{row + 1} 列{col + 1} が画面と違います。"
+                                 "何も書き込まず、画面を読み直します。")
+        source = req.get("source")
+        if not isinstance(source, dict):
+            raise EditorError("貼り付けるブロック(source)がありません。")
+        ops, notes = self._paste_ops(device, source, row, col, target)
+        name = source.get("model") or str(source.get("model_id"))
+        label = f"エディター: 行{row + 1} 列{col + 1} に {name} を貼り付け"
+        return self._layout_commit(device, before, ops, label,
+                                   {(row, col): source["model_id"]}, notes)
+
+    def _duplicate(self, device, before: dict, req: dict) -> dict:
+        block = _locate(before, req)
+        dst = self._cell(req, "to_")
+        if _block(before, *dst) is not None:
+            raise EditorConflict(f"行{dst[0] + 1} 列{dst[1] + 1} は空いていません。"
+                                 "何も書き込まず、画面を読み直します。")
+        ops, notes = self._paste_ops(device, block, dst[0], dst[1], None)
+        label = f"エディター: {_where(block)} {block['model']} を 行{dst[0] + 1} 列{dst[1] + 1} に複製"
+        return self._layout_commit(device, before, ops, label, {dst: block["model_id"]}, notes)
+
+    def _reset(self, device, before: dict, req: dict) -> dict:
+        """Every knob back to the model's defaults: the unit places the model afresh."""
+        block = _locate(before, req)
+        if _lossy(block):
+            raise EditorError("キャプチャーや IR のブロックはリセットできません(選択が消えるため)。")
+        row, col = block["row"], block["col"]
+        ops = [{"op": "set_block", "row": row, "col": col, "model": block["model_id"]}]
+        if isinstance(block.get("bypassed"), bool):
+            ops.append({"op": "bypass", "row": row, "col": col, "bypassed": block["bypassed"]})
+        label = f"エディター: {_where(block)} {block['model']} を初期値にリセット"
+        return self._layout_commit(device, before, ops, label, {(row, col): block["model_id"]})
+
+    def _port(self, device, before: dict, req: dict) -> dict:
+        row = req.get("row")
+        which = req.get("which")
+        if not isinstance(row, int) or not 0 <= row < qdevice.ROWS or which not in ("in", "out"):
+            raise EditorError("row と which(in / out)を指定してください。")
+        allowed = PORTS_IN if which == "in" else PORTS_OUT
+        port = req.get("port")
+        if port not in allowed:
+            raise EditorError(f"ポートは次のどれかです: {', '.join(allowed)}")
+        line = next(r for r in before["rows"] if r["row"] == row)
+        key = "in_port" if which == "in" else "out_port"
+        if req.get("expect") is not None and req["expect"] != line[key] and \
+                not (req["expect"] == "PREV_ROW" and line[key] == "EMPTY"):
+            raise EditorConflict(f"行{row + 1} の{'入力' if which == 'in' else '出力'}が画面と"
+                                 "違います。何も書き込まず、画面を読み直します。")
+        if line[key] == port:
+            return {"id": None, "warnings": [], "note": NOT_SAVED}
+        op = {"op": "set_input" if which == "in" else "set_output", "row": row, "port": port}
+        label = f"エディター: 行{row + 1} の{'入力' if which == 'in' else '出力'} " \
+                f"{port_label(line[key])} → {port_label(port)}"
+        return self._layout_commit(device, before, [op], label)
+
+    def _split(self, device, before: dict, req: dict) -> dict:
+        row = req.get("row")
+        if row not in (0, 2):
+            raise EditorError("分岐を作れるのは行 1 と行 3 だけです(本体の仕様)。")
+        line = next(r for r in before["rows"] if r["row"] == row)
+        if req.get("clear"):
+            if line.get("split") is None:
+                return {"id": None, "warnings": [], "note": NOT_SAVED}
+            op = {"op": "clear_split", "row": row}
+            label = f"エディター: 行{row + 1} の分岐を外す"
+        else:
+            sc, mc = req.get("split"), req.get("mix")
+            op = {"op": "set_split", "row": row, "split": sc, "mix": mc}
+            where = f"列{sc + 1} で分岐" if isinstance(sc, int) else "?"
+            joined = "合流しない" if mc == -1 else f"列{mc + 1} で合流" if isinstance(mc, int) else "?"
+            label = f"エディター: 行{row + 1} を {where}・{joined}(並列の経路は行{row + 2})"
+        return self._layout_commit(device, before, [op], label)
+
+    # -- scenes (not grid edits: no history) --------------------------------------------
+
+    def scene(self, device, req: dict) -> dict:
+        with self._edit:
+            self._wait_idle(device)
+            index = req.get("scene")
+            if not isinstance(index, int) or not 0 <= index < 8:
+                raise EditorError("scene は 0〜7 で指定してください。")
+            if "label" in req:
+                label = str(req.get("label") or "").strip()[:30]
+                device.set_scene_label(index, label)
+                return {"scene": index, "label": label, "note": NOT_SAVED}
+            device.switch_scene(index)
+            return {"scene": index, "active": "ABCDEFGH"[device.active_scene()],
+                    "note": NOT_SAVED}
+
     # -- gestures ----------------------------------------------------------------
 
     def begin(self, device, req: dict) -> dict:
@@ -787,6 +1047,18 @@ SIDEBAR = [
     ("looper", "LOOPER", ("Loopers",)),
 ]
 _SIDEBAR_COLOR = {"plugins": "cmp"}
+
+
+def block_copy(device, row: int, col: int) -> dict:
+    """One block as stored (model, wire values, option names, bypass): the clipboard."""
+    grid = device.grid()
+    block = _block(grid, row, col)
+    if block is None:
+        raise EditorError(f"行{row + 1} 列{col + 1} にブロックがありません。")
+    return {"model_id": block["model_id"], "model": block["model"],
+            "bypassed": block.get("bypassed"), "lossy": _lossy(block),
+            "params": [{k: p[k] for k in ("name", "value", "option", "options", "text") if k in p}
+                       for p in block["params"]]}
 
 
 def catalog_listing(device, repo="load") -> dict:

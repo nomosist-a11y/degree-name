@@ -333,6 +333,43 @@ body.ed-app dialog button:not(.primary):not(.danger) { background: #2a2a2a; bord
   .tb-devname { display: none; }
 }
 
+/* ---------------------------------------------------------------- layout editing (editor_layout.js) */
+.pb-scene { cursor: pointer; }
+.pb-scene:not(.on):hover { background: #2a2a2a; color: #fff; }
+.ed-port[role="button"] { cursor: pointer; }
+.ed-port[role="button"]:hover { background: #262626; }
+.ed-port[role="button"]:focus-visible { outline: 2px solid #777; outline-offset: 1px; }
+.ed-cell[draggable="true"] { cursor: grab; }
+.ed-x { position: absolute; z-index: 3; top: calc(50% - var(--sq) / 2 - 7px); right: calc(50% - var(--sq) / 2 - 7px);
+  width: 20px; height: 20px; border-radius: 50%; border: 1px solid #555; background: #2b2b2b; color: #ddd; padding: 0;
+  display: none; align-items: center; justify-content: center; cursor: pointer; }
+.ed-x svg { width: 12px; height: 12px; stroke: currentColor; stroke-width: 2.4; fill: none; }
+.ed-x:hover { background: #E5483D; border-color: #E5483D; color: #fff; }
+@media (hover: hover) {
+  .ed-cell:hover .ed-x { display: flex; }
+}
+.ed-cell.selcell .ed-x { display: flex; }
+body.ed-dragging .ed-x { display: none !important; }
+.ed-cell.drop-ok::after, .ed-cell.drop-dup::after { content: ""; position: absolute; width: var(--sq); height: var(--sq);
+  border-radius: 13px; border: 2px dashed #9a9a9a; background: rgba(255,255,255,.06); }
+.ed-cell.drop-dup::after { border-color: var(--green); }
+.ed-cell.drop-swap .ed-blk { outline: 2px dashed #fff; outline-offset: 3px; }
+body.ed-dragging .ed-grid { outline: 1px dashed #333; outline-offset: 6px; border-radius: 12px; }
+body.ed-dragging .sbar-notice::before { content: "グリッドの外に落とすと削除 / Option(Alt)を押しながらで複製  "; color: #f2c94c; }
+.ed-cell.split-from::before, .ed-cell.split-to::before { content: ""; position: absolute; top: 4px; bottom: 4px; width: 2px;
+  background: #6ea0ff; opacity: .7; border-radius: 1px; }
+.ed-cell.split-from::before { left: 2px; }
+.ed-cell.split-to::before { right: 2px; }
+.ed-row.lane::before { content: "並列"; position: absolute; left: 60px; top: -2px; font-size: 10px; color: #6ea0ff; }
+.ed-dlg-fields { display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 14px; }
+.ed-dlg-fields select, .ed-dlg-fields input { background: #141414; color: #eee; border: 1px solid #3a3a3a; border-radius: 6px;
+  padding: 6px 8px; font: inherit; }
+.ed-dlg-fields input { width: 100%; }
+@media (max-width: 639px) {
+  .ed-x { width: 18px; height: 18px; top: calc(50% - var(--sq) / 2 - 6px); right: calc(50% - var(--sq) / 2 - 6px); }
+  .ed-row.lane::before { left: 40px; }
+}
+
 /* ---------------------------------------------------------------- real-gear photos (editor_photos.js) */
 .ed-pp { display: flex; align-items: stretch; gap: 8px; }
 .ed-pp > .cc { flex: 1 1 auto; min-width: 0; }

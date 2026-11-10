@@ -282,12 +282,7 @@ function renderPresetBar() {
   box.title = p.dirty === true ? `${name}(本体に保存前の編集があります)` : p.dirty === false ? name : `${name}(編集の有無は不明)`;
   const labels = v.scene_labels || [];
   const scenes = "ABCDEFGH".split("");
-  const btn = (s, i) => {
-    const lab = (labels[i] || "").trim();
-    return el("button", { type: "button", class: `pb-scene ${v.scene === s ? "on" : ""}`, disabled: true,
-      "aria-pressed": String(v.scene === s),
-      title: `${lab ? `${s}: ${lab}\n` : ""}${v.scene === s ? "いまのシーン。" : ""}シーンの切り替えは本体で` }, s);
-  };
+  const btn = (s, i) => EdLayout.sceneButton(s, i, labels, v.scene);
   document.getElementById("scenes").replaceChildren(
     el("div", { class: "pb-sgrp" }, scenes.slice(0, 4).map((s, i) => btn(s, i))),
     el("div", { class: "pb-sgrp" }, scenes.slice(4).map((s, i) => btn(s, i + 4))));
@@ -309,12 +304,12 @@ function portNode(port, side, dead, rowNo) {
   const label = EC.portLabel(port);
   const where = side === "in" ? "入力" : "出力";
   if (!label) {
-    return el("div", { class: `ed-port ${side} add`, title: `行${rowNo} ${where}: なし(配線の変更は本体で)` },
+    return el("div", { class: `ed-port ${side} add`, "data-row": rowNo - 1, "data-side": side, title: `行${rowNo} ${where}: なし` },
       svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, svg("path", { d: "M12 4v16M4 12h16" })));
   }
   const words = label.split(" ");
   const first = words.shift();
-  return el("div", { class: `ed-port ${side} ${dead ? "dead" : ""}`,
+  return el("div", { class: `ed-port ${side} ${dead ? "dead" : ""}`, "data-row": rowNo - 1, "data-side": side,
     title: `行${rowNo} ${where}: ${port}${dead ? "(Out 1/2 に届かない)" : ""}` },
     el("span", {}, first), words.length ? el("span", {}, words.join(" ")) : null);
 }
@@ -332,6 +327,7 @@ function renderGrid() {
       portNode(r.out_port, "out", dead, r.row + 1));
   });
   box.replaceChildren(rows.length ? rows : el("p", { class: "ed-empty" }, "グリッドを読めませんでした。"));
+  if (rows.length) EdLayout.decorate(box);
 }
 
 function cellNode(c, row, col) {
@@ -340,7 +336,7 @@ function cellNode(c, row, col) {
   if (!c) {
     const cell = el("div", { class: `ed-cell empty ${selected ? "selcell" : ""}`, role: "button",
       tabindex: selected ? "0" : "-1", "aria-pressed": String(selected), "data-row": row, "data-col": col,
-      title: `${where}(空き)。選んで左の一覧からダブルクリックで置けます`, "aria-label": `${where} 空き` });
+      title: `${where}(空き)。左の一覧からドラッグ(または選んでダブルクリック)で置けます`, "aria-label": `${where} 空き` });
     cell.addEventListener("click", () => selectCell(row, col));
     cell.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectCell(row, col); } });
     return cell;
@@ -536,6 +532,7 @@ function deviceItem(m, b) {
   });
   item.append(more);
   item.addEventListener("dblclick", e => { e.preventDefault(); placeModel(m); });
+  EdLayout.wireDevice(item, m);
   item.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); placeModel(m); } });
   return item;
 }
@@ -632,12 +629,8 @@ function renderParams() {
 
   const dots = el("button", { type: "button", class: "cc-dots", "aria-label": "ブロックの情報", "aria-haspopup": "true" }, DOTS_V());
   dots.addEventListener("click", () => openMenu(dots, [
-    { head: b.category_label || b.category || "" },
-    { info: `${b.title || b.model}(行${b.row + 1} 列${b.col + 1})` },
-    b.based_on ? { info: b.based_on } : null,
+    ...EdLayout.blockMenuItems(b),
     ED.view.repo && ED.view.repo.note ? { info: `表示属性: ${ED.view.repo.note}` } : null,
-    { sep: true },
-    { label: "読み直す", onClick: () => loadGrid() },
   ]));
 
   const banners = [];
@@ -1137,7 +1130,7 @@ document.getElementById("btnPresetMenu").addEventListener("click", e => openMenu
   { label: "sandbox に保存…", onClick: () => saveFlow() },
   { label: "履歴", onClick: () => openHistory() },
   { sep: true },
-  { info: "プリセットとシーンの切り替えは本体で行います(切り替えると音が変わり、保存前の編集が消えます)。" },
+  { info: "プリセットの切り替えは「DIRECTORY」(プリセット管理)か本体で行います(切り替えると音が変わり、保存前の編集が消えます)。シーンは上の A〜H で切り替えられます。" },
 ]));
 document.getElementById("btnSave").addEventListener("click", () => saveFlow());
 document.getElementById("btnHistory").addEventListener("click", () => {

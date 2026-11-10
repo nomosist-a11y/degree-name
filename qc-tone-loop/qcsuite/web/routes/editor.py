@@ -105,6 +105,32 @@ async def replace(request: Request):
     return result
 
 
+# --- grid layout: move / delete / paste / duplicate / reset / port / split ---
+
+@router.post("/layout/{action}")
+async def layout(action: str, request: Request):
+    body = await _body(request)
+    state = _state(request)
+    try:
+        result = await run_in_threadpool(state.editor.layout, state.device(), action, body)
+    except editor.EditorConflict as exc:
+        return _conflict(exc)
+    state.checkpoint()
+    return result
+
+
+@router.get("/block")
+def block(request: Request, row: int, col: int):
+    return editor.block_copy(_state(request).device(), row, col)
+
+
+@router.post("/scene")
+async def scene(request: Request):
+    body = await _body(request)
+    state = _state(request)
+    return await run_in_threadpool(state.editor.scene, state.device(), body)
+
+
 # --- photos of the real gear (display only; nothing here touches the unit) ---
 
 @router.get("/photo")

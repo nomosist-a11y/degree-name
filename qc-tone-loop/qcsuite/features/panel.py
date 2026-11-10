@@ -304,7 +304,8 @@ def restore_patch(saved: dict, current: dict) -> tuple[dict, list[str]]:
     not restored (they would not sound anyway when written from here).
     """
     base = qdevice.restore_ops(saved, current)["ops"]
-    cur_cells = {(b["row"], b["col"]): b for b in current["blocks"]}
+    # Compare against the grid as it will be after the moves restore makes.
+    cur_cells = {(b["row"], b["col"]): b for b in qdevice._moves(saved, current)[1]["blocks"]}
     saved_cells = {(b["row"], b["col"]): b for b in saved["blocks"]}
     replaced = {(op["row"], op["col"]) for op in base if op["op"] == "set_block"}
     ops, notes = [], []
