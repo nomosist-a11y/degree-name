@@ -190,9 +190,35 @@ def test_no_device_list_is_fine(monkeypatch, tmp_path):
     ("Fulltone OCD", "Fulltone OCD v2", True),
     ("Mesa Boogie Dual Rectifier", "Mesa/Boogie Dual Rectifier Solo Head", True),
     ("Mesa Boogie Dual Rectifier", "Mesa/Boogie Mark IV", False),
+    # wrong matches seen on the real catalog with a looser rule (2026-11-10)
+    ("Zilla Open", "Zilla Parishad High Addakal Open Area", False),
+    ("Universal Audio 1176", "Universal Audio (AES 124)", False),
+    ("Gibson GA-8", "Reverend Obediah C. Gibson House, Griffin, Spalding County, GA HABS GA,128-GRIF,4-1", False),
+    ("Two Rock Open Back", "Two Mule Deer Grazing - Ridgeline Open Space - Castle Rock, CO", False),
+    ("Marshall", "Marshall JCM800", False),                          # one word is too vague
+    ("DOD Overdrive Preamp 250", "2013 DOD 250 Overdrive Preamp and 201 Phasor", True),
+    ("Tech21 Bass Driver DI", "Tech 21 SansAmp Bass Driver DI", True),
 ])
 def test_good_match(query, hay, ok):
     assert photos.good_match(query, hay) is ok
+
+
+def test_description_alone_does_not_make_a_match():
+    fake = FakeCommons(commons_answer(("Pedalboard at a show", "CC0", "a Fulltone OCD on the left")))
+    assert photos.commons_search("Fulltone OCD", fake.json) is None
+
+
+def test_a_cached_photo_from_a_looser_rule_is_searched_again(device_list, online):
+    bad = FakeCommons(commons_answer(("Marshall JCM800 head", "CC0", "")))
+    photos.lookup("Brit 2203", **bad.kw)
+    meta = next(photos.cache_dir().glob("*.json"))
+    rec = json.loads(meta.read_text())
+    rec["title"], rec["object"] = "Some school.jpg", "Some school"
+    meta.write_text(json.dumps(rec))
+    none = FakeCommons(commons_answer())
+    r = photos.lookup("Brit 2203", **none.kw)
+    assert len(none.urls) == 1 and r["photo"] is None
+    assert not list(photos.cache_dir().glob("*.jpg"))         # the wrong photo is gone
 
 
 def test_commons_search_takes_the_first_good_free_photo():

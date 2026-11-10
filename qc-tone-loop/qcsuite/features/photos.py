@@ -60,8 +60,8 @@ DEFAULT_DEVICE_LIST = Path.home() / "Downloads" / "quad-cortex-device-list.md"
 
 _MARKS = re.compile(r"[®™©]")
 _BASED = re.compile(r"^\s*based\s+on\s+", re.I)
-_STOP = {"with", "and", "the", "of", "a", "an", "for", "in", "on", "by", "custom",
-         "speakers", "speaker", "drivers", "driver", "s", "mod", "modded", "version",
+_STOP = {"with", "and", "the", "of", "a", "an", "for", "in", "on", "by",
+         "speakers", "speaker", "s", "mod", "modded", "version",
          "amp", "amplifier", "amplifiers", "pedal", "head", "combo", "cabinet", "cab"}
 
 
@@ -348,30 +348,28 @@ def _strip_html(text) -> str:
     return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
-def good_match(query: str, haystack: str) -> bool:
-    """True when the file is about this gear, not just a similar word.
+def good_match(query: str, title: str) -> bool:
+    """True when the file's title names this gear, not just similar words.
 
-    The brand (first word), every word with a digit (model numbers) and at
-    least two thirds of the remaining words must appear. Words are matched
-    with and without spaces, so "JCM800" matches "JCM 800".
+    Checked against the file name (and its ObjectName) only - descriptions
+    and categories matched schools, houses and bronze ingots on the real
+    catalog (2026-11-10). Every word of the query must appear, two of them
+    side by side (so the words form the name rather than being scattered),
+    and a one-word query ("Marshall", "Fender Cab") is too vague to show.
+    Words are matched with and without spaces, so "JCM800" matches "JCM 800".
     """
     words = _tokens(query)
-    if not words:
+    if len(words) < 2:
         return False
-    spaced = " " + " ".join(re.findall(r"[0-9a-z]+", haystack.lower())) + " "
-    packed = norm(haystack)
+    spaced = " " + " ".join(re.findall(r"[0-9a-z]+", title.lower())) + " "
+    packed = norm(title)
 
     def has(w):
         return f" {w} " in spaced or (len(w) >= 3 and w in packed)
 
-    if not has(words[0]):
+    if not all(has(w) for w in words):
         return False
-    if not all(has(w) for w in words if re.search(r"\d", w)):
-        return False
-    rest = [w for w in words[1:] if not re.search(r"\d", w)]
-    if rest and sum(has(w) for w in rest) * 3 < len(rest) * 2:
-        return False
-    return True
+    return any(a + b in packed or f" {a} {b} " in spaced for a, b in zip(words, words[1:]))
 
 
 class RateLimited(OSError):
@@ -464,11 +462,10 @@ def commons_search(query: str, fetch_json=None) -> dict | None:
         if not licence or meta.get("NonFree", "").lower() in ("true", "1"):
             continue
         title = page.get("title", "")
-        hay = " ".join([title, meta.get("ObjectName", ""), meta.get("ImageDescription", "")[:600],
-                        meta.get("Categories", "").replace("|", " ")])
-        if not good_match(query, hay):
+        name = " ".join([title.removeprefix("File:"), meta.get("ObjectName", "")])
+        if not good_match(query, name):
             continue
-        return {"title": title.removeprefix("File:"),
+        return {"title": title.removeprefix("File:"), "object": meta.get("ObjectName", "")[:300],
                 "thumb": info.get("thumburl") or info.get("url"),
                 "page": info.get("descriptionurl", ""),
                 "author": meta.get("Artist", "")[:200] or "不明",
@@ -503,7 +500,9 @@ def commons_photo(query: str, *, fetch: bool = True, fetch_json=None,
         except (OSError, ValueError):
             return None
         if rec.get("found"):
-            if (cache_dir() / rec.get("file", "")).is_file():
+            # A photo kept under an older, looser rule is searched again.
+            if (cache_dir() / rec.get("file", "")).is_file() and \
+                    good_match(query, f"{rec.get('title', '')} {rec.get('object', '')}"):
                 return rec
             return None
         if time.time() - rec.get("checked", 0) < NEGATIVE_DAYS * 86400:
@@ -522,6 +521,9 @@ def commons_photo(query: str, *, fetch: bool = True, fetch_json=None,
         try:
             hit = commons_search(query, fetch_json)
             rec = {"query": query, "checked": time.time(), "found": False}
+            for old in cache_dir().glob(f"{key}.*"):
+                if old.suffix.lower() in IMAGE_EXT:
+                    old.unlink()          # a photo an older rule had picked
             if hit:
                 data = (fetch_bytes or _get_bytes)(hit["thumb"])
                 ext = _sniff(data)
