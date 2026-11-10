@@ -353,7 +353,31 @@ def s_restore(run: Run):
     plan_mod.execute(plan, device, confirm=True)
     restored = presets.normalize(device.read_stored(key, position), device.catalog)
     changes = [c for c in presets.diff(source, restored) if c["where"] != "名前"]
-    return (PASS if not changes else FAIL), presets.diff_text(changes)[:600]
+    expected, real = split_restore_limits(source, changes)
+    text = presets.diff_text(real)[:600] if real else "名前以外の差分なし"
+    if expected:
+        text += (f"\n(復元できないと分かっている差分 {len(expected)} 件は判定から外しました: "
+                 + "; ".join(c["where"] for c in expected[:6]) + ")")
+    return (PASS if not real else FAIL), text
+
+
+def split_restore_limits(source: dict, changes: list[dict]) -> tuple[list[dict], list[dict]]:
+    """``(expected, real)``: diffs a restore is documented not to bring back
+    (qcsuite.rebuild: per-scene bypass, per-scene values, string parameters)
+    versus real failures. Step 15 failed on the former whenever the sandbox's
+    first preset used scene-specific bypass (2026-10-28)."""
+    limits = set()
+    for b in source.get("blocks", []):
+        label = presets.block_label(b)
+        bp = b.get("bypass") or {}
+        if bp.get("scene_mode") and len(set(bp.get("scenes", []))) > 1:
+            limits.add(f"{label} バイパス")
+        for name, entry in b.get("params", {}).items():
+            if entry.get("scenes") or "text" in entry:
+                limits.add(f"{label} {name}")
+    expected = [c for c in changes if c["where"] in limits]
+    real = [c for c in changes if c["where"] not in limits]
+    return expected, real
 
 
 @step("5 後片付け", "sandbox の削除とフォルダ数の照合",

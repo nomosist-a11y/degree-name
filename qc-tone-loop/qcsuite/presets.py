@@ -214,9 +214,25 @@ def _same(a: dict | None, b: dict | None) -> bool:
     va, vb = a.get("value"), b.get("value")
     if va is None or vb is None:
         return va is vb
-    if a.get("scenes") != b.get("scenes") and (a.get("scenes") or b.get("scenes")):
+    sa, sb = a.get("scenes"), b.get("scenes")
+    if (sa or sb) and not _same_list(sa, sb):
         return False
     return abs(va - vb) <= VALUE_TOLERANCE
+
+
+def _same_list(a, b) -> bool:
+    """Per-scene values, equal within VALUE_TOLERANCE. An exact list compare
+    reported float noise as changes ("DECAY 0.787 -> 0.787", hardware test
+    2026-10-28)."""
+    if not a or not b or len(a) != len(b):
+        return a == b
+    for x, y in zip(a, b):
+        if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+            if abs(x - y) > VALUE_TOLERANCE:
+                return False
+        elif x != y:
+            return False
+    return True
 
 
 def diff(a: dict, b: dict) -> list[dict]:
