@@ -142,3 +142,12 @@ def test_web_flow(client):
     missing = client.post("/api/sheets/html", json={"from_backup": True, "refs": ["kami:1E"]})
     assert missing.status_code == 404
     assert "folders" in client.get("/api/sheets/sources").json()
+
+
+def test_long_block_names_wrap_instead_of_being_cut():
+    """2026-10-28: "Cory Wong Th…" in the PDF hid which block it was."""
+    from qcsuite.features.sheets import wrap_label
+    assert wrap_label("Brit 2203", 13) == ["Brit 2203"]
+    assert wrap_label("Cory Wong The 80s", 13) == ["Cory Wong The", "80s"]
+    lines = wrap_label("Cory Wong The 4th Position Compressor", 13)
+    assert len(lines) == 2 and all(len(x) <= 13 for x in lines) and lines[1].startswith("4th")

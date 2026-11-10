@@ -65,7 +65,7 @@ def test_synthetic_problems_are_found(device):
     heavy = copy.deepcopy(base)
     amp = next(b for b in heavy["blocks"] if b["category"] == "Guitar Amplifier")
     heavy["blocks"] += [dict(amp, col=6), dict(amp, col=7)]
-    assert "dsp_heavy" in _codes(health.check_preset(heavy), health.WARN)
+    assert "dsp_heavy" in _codes(health.check_preset(heavy), health.INFO)   # a hint, not a fault
     gate = copy.deepcopy(base)
     gate["rows"][0]["gate"]["NOISE REDUCTION"] = {"value": 0.9}
     assert "strong_gate" in _codes(health.check_preset(gate), health.INFO)
@@ -200,3 +200,13 @@ def test_web_flow(client):
     client.post("/api/setlist/wg/map")
     g = client.get("/api/health/gig/wg", params={"no_read": True}).json()
     assert g["songs"][0]["where"] == "kami:1E" and "ライブ前チェック" in g["markdown"]
+
+
+def test_report_before_any_scan_is_one_line_not_a_traceback(tmp_path, monkeypatch, capsys):
+    """2026-10-28: `qcsuite health report` before a scan printed a traceback."""
+    import pytest
+    from qcsuite import cli, paths
+    monkeypatch.setattr(paths, "home", lambda mock=False: tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--mock", "health", "report"])
+    assert "health scan" in str(exc.value) and "Traceback" not in str(exc.value)

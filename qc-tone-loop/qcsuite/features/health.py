@@ -35,6 +35,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from qcsuite import jobs, paths, presets
+from qcsuite.errors import QcsuiteError
 from qcsuite.device import guard
 from qcsuite.features import setlist as setlist_mod
 from qcsuite.features import sheets_sources as src
@@ -139,10 +140,14 @@ def check_preset(n: dict, *, same_content: list[str] = (), same_name: list[str] 
     gain_stages = sum(1 for b in n["blocks"] if b["category"] in
                       ("Guitar Amplifier", "Bass Amplifier", "Neural Capture", "Neural Capture V2"))
     reverbs = sum(1 for b in n["blocks"] if b["category"] == "Reverb")
+    # A stored preset already fits the DSP, so this is only a hint for adding
+    # blocks - not a problem with the preset. As a warning it flagged all 15
+    # Cory Wong presets on the unit (2026-10-28). Bypassed blocks still count:
+    # the unit reserves DSP for every placed block.
     if gain_stages >= HEAVY_GAIN_STAGES or reverbs >= HEAVY_REVERBS or len(n["blocks"]) >= HEAVY_BLOCKS:
-        out.append(_issue(WARN, "dsp_heavy", f"アンプ/キャプチャー {gain_stages}、リバーブ {reverbs}、"
-                          f"ブロック {len(n['blocks'])} 個。DSP が重い可能性があります(目安)。",
-                          "ブロックを足すと置けないことがある。本体の DSP 表示で確認する。"))
+        out.append(_issue(INFO, "dsp_heavy", f"アンプ/キャプチャー {gain_stages}、リバーブ {reverbs}、"
+                          f"ブロック {len(n['blocks'])} 個。DSP の余裕が少ないかもしれません(目安)。",
+                          "このままでは問題ありません。ブロックを足して置けないときは、本体の DSP 表示で確認する。"))
     # Scenes.
     uses_scenes = any(b.get("bypass") and b["bypass"]["scene_mode"] and len(set(b["bypass"]["scenes"])) > 1
                       for b in n["blocks"]) or any(
@@ -219,10 +224,16 @@ def save_report(report: dict, mock: bool) -> Path:
     return path
 
 
+class ReportMissing(QcsuiteError, FileNotFoundError):
+    """No scan yet. A QcsuiteError so the CLI prints one line instead of a
+    traceback (hardware test 2026-10-28); still a FileNotFoundError for callers
+    that check for that."""
+
+
 def last_report(mock: bool) -> dict:
     path = health_dir(mock) / "last.json"
     if not path.exists():
-        raise FileNotFoundError("まだ健康診断をしていません(qcsuite health scan)")
+        raise ReportMissing("まだ健康診断をしていません。先に qcsuite health scan を実行してください。")
     return json.loads(path.read_text())
 
 

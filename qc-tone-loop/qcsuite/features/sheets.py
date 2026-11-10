@@ -49,6 +49,30 @@ def _e(v) -> str:
     return html.escape("" if v is None else str(v))
 
 
+def wrap_label(name: str, width: int) -> list[str]:
+    """A block name on one or two lines of about ``width`` characters.
+
+    Long names used to be cut ("Cory Wong Th…"), which hid which block it was
+    (hardware test 2026-10-28). Break at spaces; only a name that still does not
+    fit in two lines loses its end.
+    """
+    if len(name) <= width:
+        return [name]
+    words, lines, cur = name.split(" "), [], ""
+    for w in words:
+        nxt = f"{cur} {w}".strip()
+        if len(nxt) <= width or not cur:
+            cur = nxt
+        else:
+            lines.append(cur)
+            cur = w
+    lines.append(cur)
+    if len(lines) > 2:
+        lines = [lines[0], " ".join(lines[1:])]
+    lines = [ln if len(ln) <= width else ln[: width - 1].rstrip() + "…" for ln in lines]
+    return lines
+
+
 def _color(b: dict) -> str:
     cat = b.get("category") or ""
     if cat.startswith("Cabsim") or cat == "IRLoaders":
@@ -115,16 +139,19 @@ def chain_svg(n: dict) -> str:
             inert = bool(b.get("inert_plugin") or b.get("capture"))
             style = 'stroke-dasharray="4 3" opacity="0.55"' if _all_bypassed(b) else ""
             stroke = "#c2392b" if inert else "#555"
-            label = b["model"] if len(b["model"]) <= 15 else b["model"][:14] + "…"
+            label = wrap_label(b["model"], 15)
             title = "\n".join([b["model"]] + [f"{k}: {v}" for k, v in presets.main_knobs(b, 30)])
             parts.append(
                 f'<g><title>{_e(title)}</title><rect x="{x}" y="{y - box_h / 2}" width="{box_w}" '
                 f'height="{box_h}" rx="6" fill="{_color(b)}" stroke="{stroke}" '
                 f'stroke-width="{2 if inert else 1}" {style}/>'
-                f'<text x="{x + box_w / 2}" y="{y - 2}" font-size="10.5" text-anchor="middle" '
-                f'fill="#111">{_e(label)}</text>'
-                f'<text x="{x + box_w / 2}" y="{y + 12}" font-size="9" text-anchor="middle" '
-                f'fill="#555">列{b["col"] + 1}{" バイパス" if _all_bypassed(b) else ""}</text></g>')
+                + "".join(f'<text x="{x + box_w / 2}" y="{y + dy}" font-size="{fs}" text-anchor="middle" '
+                          f'fill="#111">{_e(line)}</text>'
+                          for line, dy, fs in zip(label, (-2,) if len(label) == 1 else (-7, 3.5),
+                                                  (10.5,) if len(label) == 1 else (9.5, 9.5)))
+                + f'<text x="{x + box_w / 2}" y="{y + (12 if len(label) == 1 else 14.5)}" font-size="9" '
+                f'text-anchor="middle" fill="#555">列{b["col"] + 1}'
+                f'{" バイパス" if _all_bypassed(b) else ""}</text></g>')
             prev = x + box_w
         out_x = left + 8 * cell_w
         lane = r.get("lane", {})
@@ -335,8 +362,9 @@ def _draw_chain(ax, n: dict):
                                         fc=_color(b), ec="#c2392b" if inert else "#555",
                                         lw=1.4 if inert else 0.6,
                                         ls="--" if _all_bypassed(b) else "-"))
-            label = b["model"] if len(b["model"]) <= 13 else b["model"][:12] + "…"
-            ax.text(x + 0.5, y, label, fontsize=6, ha="center", va="center")
+            label = wrap_label(b["model"], 13)
+            ax.text(x + 0.5, y, "\n".join(label), fontsize=6 if len(label) == 1 else 5.4,
+                    ha="center", va="center", linespacing=1.0)
             prev = x + 1.0
         ax.annotate("", xy=(10.35, y), xytext=(prev, y),
                     arrowprops={"arrowstyle": "->", "color": "#777", "lw": 0.8})
