@@ -81,6 +81,12 @@ class FakeConfig:
     #: Unknown on hardware (the second item of the hardware test plan): if the
     #: row output VOLUME also only reads back, the leveler must use another knob.
     lane_volume_inert: bool = False
+    #: Measured 2026-11-10 (off by default so older tests keep their meaning):
+    #: a capture block placed from the computer starts bypassed and ignores the
+    #: first bypass write sent right after it is placed...
+    capture_bypass_needs_settling: bool = False
+    #: ...and a save from the computer stores bypassed capture blocks as on.
+    save_unbypasses_captures: bool = False
 
 
 @dataclass
@@ -115,6 +121,7 @@ class FakeQuadCortex:
         self._catalog_obj = data.build_catalog()
         self._catalog_failures = 0
         self._first_read_pending = self.config.first_read_dropped
+        self._unsettled: set = set()          # capture cells whose next bypass is dropped
         self.calls: list[tuple] = []
         self.audio_interruptions = 0
         self.closed = False
@@ -671,6 +678,10 @@ class FakeQuadCortex:
                 sound = self._cell_sound(self.live, row, column, model_id)
                 if model_id in data.CAPTURE_MODELS:
                     sound.update(passthrough=True, reason="パソコンから置いたキャプチャー(未読み込み)")
+                    if self.config.capture_bypass_needs_settling:
+                        for sb in self.live.bypass[row].colBypass[column].sceneBypass:
+                            sb.bypass = True
+                        self._unsettled.add((row, column))
                 self.live_audible[(row, column)] = sound
                 self.dirty = True
                 placed = True
@@ -697,6 +708,9 @@ class FakeQuadCortex:
     def set_bypass(self, row: int, column: int, bypassed: bool, scene=None):
         self._log("set_bypass", row, column, bypassed)
         with self._lock:
+            if (row, column) in self._unsettled:
+                self._unsettled.discard((row, column))      # dropped: the block is still loading
+                return
             if scene is not None:
                 self.switch_scene(scene)
             cb = self.live.bypass[row].colBypass[column]
@@ -857,6 +871,12 @@ class FakeQuadCortex:
                 p.name = stored_name
                 p.default_scene = self.scene
                 del p.tags[:]                 # a save carries no tags
+                if self.config.save_unbypasses_captures:
+                    for r, chain in enumerate(p.chains):
+                        for c, m in enumerate(chain.models):
+                            if m.hash in data.CAPTURE_MODELS:
+                                for sb in p.bypass[r].colBypass[c].sceneBypass:
+                                    sb.bypass = False
                 taint = {cell: copy.deepcopy(s) for cell, s in self.live_audible.items()
                          if s.get("passthrough") or s.get("inert_since_host_write")}
                 lane_taint = dict(self.lane_audible) if self.config.lane_volume_inert else None

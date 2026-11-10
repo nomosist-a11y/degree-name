@@ -19,6 +19,8 @@ What this cannot bring back, and reports as warnings rather than hiding:
 
 from __future__ import annotations
 
+import time
+
 import pyquadcortex as pq
 
 from qcsuite.device import inert
@@ -96,4 +98,37 @@ def rebuild_grid(device, normalized: dict) -> list[str]:
                 device.set_lane_param(r["row"], name, lane[name]["value"])
     for i, label in enumerate(normalized.get("scene_labels", [])):
         device.set_scene_label(i, label)
+    warnings += _settle_bypass(device, ops)
     return warnings
+
+
+#: Rounds of read-back-and-resend for bypass writes the unit dropped.
+BYPASS_ROUNDS = 3
+BYPASS_SETTLE_S = 1.5
+
+
+def _settle_bypass(device, ops: list[dict]) -> list[str]:
+    """Re-send bypass writes that did not land; return warnings for any that still did not.
+
+    On the player's unit a bypass sent right after a Neural Capture block was
+    placed was dropped - the restored grid had a capture bypassed that should
+    have been on - while the same write sent once the block had settled landed
+    (2026-11-10). So the grid is read back and mismatches are sent again.
+    """
+    wanted = {(o["row"], o["col"]): bool(o["bypassed"]) for o in ops if o["op"] == "bypass"}
+    if not wanted:
+        return []
+    wrong = {}
+    for _ in range(BYPASS_ROUNDS):
+        if not device.mock:
+            time.sleep(BYPASS_SETTLE_S)
+        live = {(b["row"], b["col"]): bool(b.get("bypassed")) for b in device.grid()["blocks"]}
+        wrong = {cell: want for cell, want in wanted.items() if cell in live and live[cell] != want}
+        if not wrong:
+            return []
+        device.apply_patch({"note": "rebuild: bypass again", "ops": [
+            {"op": "bypass", "row": r, "col": c, "bypassed": want} for (r, c), want in wrong.items()]})
+    live = {(b["row"], b["col"]): bool(b.get("bypassed")) for b in device.grid()["blocks"]}
+    still = sorted(cell for cell, want in wanted.items() if cell in live and live[cell] != want)
+    return [f"行{r + 1} 列{c + 1}: バイパスの書き込みが本体に届きませんでした(本体の画面で確認)。"
+            for r, c in still]

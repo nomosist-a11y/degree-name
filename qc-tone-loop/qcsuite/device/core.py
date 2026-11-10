@@ -452,6 +452,24 @@ class Device:
                        "(計画を作り直してください)。"))
         return occupied
 
+    #: Neural Capture block models (V1, V2).
+    CAPTURE_MODELS = (14000, 14001)
+
+    def _bypassed_captures(self) -> list[str]:
+        """Capture blocks bypassed in the live scene, as "行R 列C".
+
+        Saving from the computer stores them NOT bypassed: a plain copy of a
+        preset with bypassed captures came back with them on, while every other
+        block kept its bypass (measured on the player's unit, 2026-11-10). The
+        save itself cannot avoid it, so the player is told which to fix.
+        """
+        try:
+            blocks = self.grid()["blocks"]
+        except Exception:                     # a warning must never stop a save
+            return []
+        return [f"行{b['row'] + 1} 列{b['col'] + 1}" for b in blocks
+                if b.get("model_id") in self.CAPTURE_MODELS and b.get("bypassed")]
+
     def save_current(self, key: str, position: int, name: str, *, step=None,
                      instrument: int = 1) -> str:
         """Save the live grid into ``key``/``position``. Returns the stored name.
@@ -467,6 +485,7 @@ class Device:
             self.policy.check(key, "保存")
             self._check_overwrite(key, position, step)
             self._forget_folders()
+            lost_bypass = self._bypassed_captures()
             stored = self.qc.save_current_preset(key, position, name, instrument=instrument,
                                                  confirm=True)
             if stored is None or not guard.name_matches(name, stored):
@@ -488,6 +507,11 @@ class Device:
                                f"(保存した「{name}」ではありません)。保存が届かなかった可能性があります。")
         if stored != name:
             self.notice(INFO, f"同じ名前があったため、本体が「{name}」を「{stored}」として保存しました。")
+        if lost_bypass:
+            self.notice(INERT_WRITE,
+                        f"「{stored}」: パソコンから保存すると、バイパスしたキャプチャー"
+                        f"({'、'.join(lost_bypass)})はバイパスが外れて保存されます(本体の仕様。"
+                        "2026-11-10 に実機で確認)。本体の画面でバイパスし直して保存してください。")
         return stored
 
     def copy_preset(self, src_key: str, position: int, dst_key: str,
