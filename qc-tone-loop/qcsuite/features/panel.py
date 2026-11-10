@@ -270,13 +270,26 @@ def apply(device, patch: dict, instruction: str = "", engine: str = "rules",
         raise PanelError("\n".join(violations))
     result = device.apply_patch(patch)
     after = device.grid()
+    entry_id = record(device.mock, patch, before, after, instruction=instruction, engine=engine,
+                      summary=summary, warnings=result["warnings"])
+    return {"id": entry_id, "applied": result["applied"], "warnings": result["warnings"],
+            "note": "保存はしていません。本体でプリセットを呼び出し直すと元に戻ります。"}
+
+
+def record(mock: bool, patch: dict, before: dict, after: dict, *, instruction: str = "",
+           engine: str = "rules", summary=None, warnings=None) -> str:
+    """Log a change already made on the live grid, so undo / redo / A/B see it.
+
+    ``before`` / ``after`` are qctone grid snapshots. :func:`apply` uses this;
+    so does the editor (:mod:`qcsuite.features.editor`), whose drags send their
+    intermediate values before the change is complete.
+    """
     entry = {"kind": "apply", "id": uuid.uuid4().hex[:8], "at": time.strftime("%Y-%m-%d %H:%M:%S"),
              "instruction": instruction, "engine": engine, "patch": patch,
-             "summary": list(summary or []), "warnings": result["warnings"],
+             "summary": list(summary or []), "warnings": list(warnings or []),
              "before": before, "after": after}
-    _append(device.mock, entry)
-    return {"id": entry["id"], "applied": result["applied"], "warnings": result["warnings"],
-            "note": "保存はしていません。本体でプリセットを呼び出し直すと元に戻ります。"}
+    _append(mock, entry)
+    return entry["id"]
 
 
 def _param_map(block: dict) -> dict:
