@@ -352,8 +352,20 @@ function cellNode(c, row, col) {
     c.responds === false ? el("span", { class: "ed-mark", "aria-hidden": "true" }, "!") : null);
   const cell = el("div", { class: `ed-cell ${selected ? "selcell" : ""}`, role: "button",
     tabindex: selected ? "0" : "-1", "aria-pressed": String(selected), "data-row": row, "data-col": col,
-    "aria-label": `${where} ${c.title || c.model}${c.bypassed ? " バイパス中" : ""}`, title: tip }, blk);
-  cell.addEventListener("click", () => selectCell(row, col));
+    "aria-label": `${where} ${c.title || c.model}${c.bypassed ? " バイパス中" : ""}`,
+    title: `${tip}\nダブルクリックでバイパスの切り替え` }, blk);
+  // Double-click toggles bypass, as on Cortex Control. The first click selects
+  // and re-renders the grid, so a native dblclick can land on a replaced node;
+  // the click count of the second click is reliable.
+  cell.addEventListener("click", e => {
+    if (e.detail === 2) {
+      const b = cellAt(row, col);
+      if (b) toggleBypass(b);
+      return;
+    }
+    if (e.detail > 2) return;
+    selectCell(row, col);
+  });
   cell.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectCell(row, col); } });
   return cell;
 }
