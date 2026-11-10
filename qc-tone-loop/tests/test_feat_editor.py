@@ -865,3 +865,39 @@ def test_placeholder_knob_has_no_default_to_reset_to(device):
     level = next(p for p in editor.view(device)["rows"][0]["cells"][0]["params"]
                  if p["name"] == "LEVEL")
     assert level["placeholder"] and level["default"] is None
+
+
+# -- skew on the wire (measured on the unit, 2026-11-10) ---------------------------------
+
+def test_fix_skew_reads_the_wire_as_a_skewed_position(repo):
+    grid = {"blocks": [{"row": 0, "col": 0, "model_id": 12006, "params": [
+        {"name": "HPF", "index": 10, "value": 0.0, "real": 20.0, "range": [20, 500]},
+        {"name": "PAN", "index": 3, "value": 0.5, "real": 5.0, "range": [0, 10]}]}]}
+    editor.fix_skew(grid, repo)
+    hpf, pan = grid["blocks"][0]["params"]
+    assert hpf["real"] == 20.0 and hpf["skew"] == pytest.approx(0.3)
+    assert pan["real"] == 5.0 and "skew" not in pan                   # skew 1: untouched
+    grid["blocks"][0]["params"][0].update(value=0.5, real=260.0)
+    editor.fix_skew(grid, repo)
+    assert grid["blocks"][0]["params"][0]["real"] == pytest.approx(20 + 480 * 0.5 ** (1 / 0.3),
+                                                                    abs=1e-3)
+
+
+def test_skewed_knob_writes_the_skewed_wire_value_and_reads_back(device, fake):
+    s = editor.EditorSession()
+    since = len(fake.calls)
+    r = s.set(device, {"row": 0, "col": 1, "model_id": 12001, "param": "LOW CUT", "real": 80.0})
+    (call,) = [c for c in fake.calls[since:] if c[0] == "set_param"]
+    assert call[2]["value"] == pytest.approx(((80 - 20) / 480) ** 0.3, abs=1e-6)
+    assert call[2]["real"] is None
+    assert r["param"]["value"] == pytest.approx(80.0, abs=0.01)
+    cab = cell(editor.view(device), 0, 1)
+    low = next(p for p in cab["params"] if p["name"] == "LOW CUT")
+    assert low["value"] == pytest.approx(80.0, abs=0.01)
+    g = s.begin(device, {"row": 0, "col": 1, "model_id": 12001, "param": "LOW CUT",
+                         "expect": 80.0})                          # no false conflict
+    since = len(fake.calls)
+    s.move(device, g["gesture"], {"seq": 1, "real": 200.0})
+    (call,) = [c for c in fake.calls[since:] if c[0] == "set_param"]
+    assert call[2]["value"] == pytest.approx((180 / 480) ** 0.3, abs=1e-6)
+    s.end(device, g["gesture"], {"real": 200.0})

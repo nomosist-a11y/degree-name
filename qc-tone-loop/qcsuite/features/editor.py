@@ -283,6 +283,7 @@ def view(device, repo="load") -> dict:
     if repo == "load":
         repo = load_repo(device)
     preset, grid, catalog = _pinned_snapshot(device)
+    fix_skew(grid, repo)
     cells = {(b["row"], b["col"]): b for b in grid["blocks"]}
     rows = []
     for r in grid["rows"]:
@@ -303,6 +304,47 @@ def view(device, repo="load") -> dict:
 
 
 # -- writes ------------------------------------------------------------------------------
+
+def fix_skew(grid: dict, repo) -> dict:
+    """Correct the real values of skewed knobs in a qctone snapshot, in place.
+
+    Measured on the player's unit (CorOS 4.1.0, d14e, 2026-11-10): the wire's
+    0..1 for a parameter with a JUCE ``skew`` is the SKEWED position,
+    ((real - min) / (max - min)) ** skew - a cab's OUTPUT VOLUME at 0.0 dB
+    (-96..12, skew 4.93) reads 0.5595, a reverb's HIGH PASS at 80 Hz reads
+    0.2146. pyquadcortex converts linearly, so its ``real`` is wrong for these.
+    Each corrected param gets ``skew`` so writes can convert back.
+    """
+    if repo is None:
+        return grid
+    for b in grid["blocks"]:
+        if repo.get(b["model_id"]) is None:
+            continue
+        wire = repo.wire_params(b["model_id"])
+        for p in b["params"]:
+            if p.get("real") is None or p.get("value") is None or p["index"] >= len(wire):
+                continue
+            rp = wire[p["index"]]
+            if rp.name.lower() != p["name"].lower() or rp.skew == 1.0 or not rp.range_known:
+                continue
+            lo, hi = rp.minimum, rp.maximum
+            p["real"] = round(lo + (hi - lo) * min(1.0, max(0.0, p["value"])) ** (1.0 / rp.skew), 4)
+            p["skew"] = rp.skew
+            p["range"] = [lo, hi]
+    return grid
+
+
+def _read(device) -> dict:
+    """A fresh grid snapshot with skewed knobs corrected."""
+    return fix_skew(device.grid(), load_repo(device))
+
+
+def _to_wire(param: dict, real: float) -> float:
+    """Real units -> the wire's 0..1 for a skewed knob."""
+    lo, hi = param["range"]
+    x = 0.0 if hi == lo else min(1.0, max(0.0, (real - lo) / (hi - lo)))
+    return round(x ** param["skew"], 6)
+
 
 def _block(grid: dict, row, col):
     return next((b for b in grid["blocks"] if b["row"] == row and b["col"] == col), None)
@@ -365,7 +407,11 @@ def _knob_op(block, param, name, req) -> dict:
         if param.get("real") is None:
             raise EditorError(f"{name} は実際の単位の範囲が分からないため value(0〜1)で指定します。")
         lo, hi = param["range"]
-        op["real"] = round(min(hi, max(lo, float(req["real"]))), 6)
+        real = min(hi, max(lo, float(req["real"])))
+        if param.get("skew", 1.0) != 1.0:
+            op["value"] = _to_wire(param, real)     # pyquadcortex's real= would be linear
+        else:
+            op["real"] = round(real, 6)
     elif req.get("value") is not None:
         if param.get("real") is not None:
             raise EditorError(f"{name} は real(実際の単位)で指定してください。")
@@ -450,7 +496,7 @@ def _same_value(before_param, after_param) -> bool:
 
 def _commit(device, before: dict, block: dict, op: dict, extra_note: str = "") -> dict:
     result = device.apply_patch({"note": "editor", "ops": [op]})
-    after = device.grid()
+    after = _read(device)
     after_block = _block(after, op["row"], op["col"])
     if op["op"] != "bypass" and after_block is not None and \
             _same_value(_param(block, op["param"]), _param(after_block, op["param"])):
@@ -515,7 +561,7 @@ class EditorSession:
 
     def _set(self, device, req: dict) -> dict:
         self._wait_idle(device)
-        before = device.grid()
+        before = _read(device)
         block = _locate(before, req)
         op, param = build_op(block, req)
         _refuse_switch_by_value(op, before, device)
@@ -537,7 +583,7 @@ class EditorSession:
             raise EditorError(f"モデル {new_id} はこの本体の一覧にありません。")
         if not entry["usable"]:
             raise EditorError(f"{entry['name']}: {entry['why_not']}")
-        before = device.grid()
+        before = _read(device)
         row, col = req.get("row"), req.get("col")
         if req.get("model_id") is None:
             if not isinstance(row, int) or not isinstance(col, int):
@@ -558,7 +604,7 @@ class EditorSession:
                 raise
             raise EditorError(f"{entry['name']} を置けませんでした(プリセットの処理能力(DSP)が"
                               f"足りない可能性があります)。何も変わっていません: {exc}") from None
-        after = device.grid()
+        after = _read(device)
         placed = _block(after, row, col)
         if placed is None or placed["model_id"] != new_id:
             raise EditorError(f"{entry['name']} を送りましたが、読み戻すと置かれていませんでした"
@@ -579,7 +625,7 @@ class EditorSession:
 
     def _begin(self, device, req: dict) -> dict:
         self._wait_idle(device)
-        before = device.grid()
+        before = _read(device)
         block = _locate(before, req)
         name = req.get("param") or ""
         param = _param(block, name)
@@ -593,6 +639,7 @@ class EditorSession:
                             model_id=block["model_id"], param=param["name"],
                             real=param.get("real") is not None, before=before, block=block,
                             newest=-1, ended=False, sent_any=False, moves=0,
+                            skew_param=param if param.get("skew", 1.0) != 1.0 else None,
                             touched=time.monotonic(),
                             mutex=threading.Lock(), send_lock=threading.Lock())
         with self._lock:
@@ -640,6 +687,8 @@ class EditorSession:
                 self._drop(g)
                 raise EditorConflict(f"行{g.row + 1} 列{g.col + 1} のブロックが本体側で変わりました。"
                                      "ドラッグを止めました。画面を読み直します。")
+            if g.skew_param is not None and "real" in amount:
+                amount = {"value": _to_wire(g.skew_param, amount["real"])}
             device.set_knob(g.row, g.col, g.model_id, g.param, **amount)
             g.moves += 1
             g.sent_any = True
@@ -655,7 +704,7 @@ class EditorSession:
         with g.send_lock:                         # waits for a move in flight
             try:
                 # The block may have been swapped on the unit's screen mid-drag.
-                _locate(device.grid(), {"row": g.row, "col": g.col, "model_id": g.model_id})
+                _locate(_read(device), {"row": g.row, "col": g.col, "model_id": g.model_id})
                 op = _knob_op(g.block, _param(g.block, g.param), g.param, amount)
                 return _commit(device, g.before, g.block, op)
             finally:
@@ -684,7 +733,7 @@ class EditorSession:
                     g.ended = True
                 if not g.sent_any:
                     continue
-                after = device.grid()
+                after = _read(device)
                 after_block = _block(after, g.row, g.col)
                 op = {"op": "set_param", "row": g.row, "col": g.col, "param": g.param}
                 current = _param(after_block, g.param) if after_block else None
