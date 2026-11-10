@@ -234,6 +234,7 @@ function groupByKey(key) {
 
 async function loadGrid() {
   if (ED.gesture) { ED.reloadWanted = true; return; }   // redraw after the knob is let go
+  if (window.EdLayout && EdLayout.dragging()) { ED.reloadWanted = true; return; }   // a block is in the air
   if (ED.loading) return ED.loading;
   ED.loading = (async () => {
     try {
@@ -279,7 +280,8 @@ function renderPresetBar() {
   const name = p.name || "(名前が読めません)";
   box.classList.toggle("dirty", p.dirty === true);
   box.replaceChildren(el("span", {}, name + (p.dirty === true ? "*" : "")));
-  box.title = p.dirty === true ? `${name}(本体に保存前の編集があります)` : p.dirty === false ? name : `${name}(編集の有無は不明)`;
+  box.title = (p.dirty === true ? `${name}(本体に保存前の編集があります)` : p.dirty === false ? name : `${name}(編集の有無は不明)`)
+    + "\nクリックでプリセットの一覧";
   const labels = v.scene_labels || [];
   const scenes = "ABCDEFGH".split("");
   const btn = (s, i) => EdLayout.sceneButton(s, i, labels, v.scene);
@@ -1126,11 +1128,12 @@ document.getElementById("btnAB").addEventListener("click", e => openMenu(e.curre
 document.getElementById("btnAB2").addEventListener("click", e => openMenu(e.currentTarget, abItems()));
 document.getElementById("btnMore").addEventListener("click", e => openMenu(e.currentTarget, mainMenuItems()));
 document.getElementById("btnPresetMenu").addEventListener("click", e => openMenu(e.currentTarget, [
+  { label: "プリセットを選ぶ…", onClick: () => EdPresets.openList() },
   { label: "読み直す", onClick: () => { loadGrid(); loadHistory(); loadAB(); } },
   { label: "sandbox に保存…", onClick: () => saveFlow() },
   { label: "履歴", onClick: () => openHistory() },
   { sep: true },
-  { info: "プリセットの切り替えは「DIRECTORY」(プリセット管理)か本体で行います(切り替えると音が変わり、保存前の編集が消えます)。シーンは上の A〜H で切り替えられます。" },
+  { info: "プリセットは < > か名前のクリックで切り替えます(音が変わります。保存前の編集があるときは確認します)。シーンは A〜H。本体で変えたものは自動で画面に反映されます。" },
 ]));
 document.getElementById("btnSave").addEventListener("click", () => saveFlow());
 document.getElementById("btnHistory").addEventListener("click", () => {

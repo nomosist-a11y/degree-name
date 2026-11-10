@@ -131,6 +131,28 @@ async def scene(request: Request):
     return await run_in_threadpool(state.editor.scene, state.device(), body)
 
 
+# --- presets and following the unit ---
+
+@router.get("/presets")
+def presets(request: Request, folder: str = ""):
+    return editor.preset_list(_state(request).device(), folder or None)
+
+
+@router.post("/recall")
+async def recall(request: Request):
+    body = await _body(request)
+    state = _state(request)
+    return await run_in_threadpool(state.editor.recall, state.device(), body)
+
+
+@router.get("/changes")
+def changes(request: Request):
+    state = request.app.state.qc
+    if not state.connected:
+        return {"mode": "off", "seq": None, "slot": None}
+    return editor.changes(state.device())
+
+
 # --- photos of the real gear (display only; nothing here touches the unit) ---
 
 @router.get("/photo")

@@ -503,6 +503,18 @@ class FakeQuadCortex:
             entry = (stored.name, key, self.folder_names.get(key, ""), key == data.FACTORY_KEY)
             self.recents_list = [entry] + [e for e in self.recents_list if e != entry][:49]
 
+    def unit_changes(self):
+        """(seq, loaded slot): seq grows whenever the live preset, scene or slot
+        changed since the last call - the fake's stand-in for the pushes the unit
+        sends (Grid, Scene, RecallPreset, SetlistPosition)."""
+        with self._lock:
+            digest = hash((self.live.SerializeToString(deterministic=True), self.scene,
+                           getattr(self, "loaded_from", None)))
+            if digest != getattr(self, "_change_digest", None):
+                self._change_digest = digest
+                self._change_seq = getattr(self, "_change_seq", 0) + 1
+            return self._change_seq, getattr(self, "loaded_from", None)
+
     def read_current_preset(self, timeout: float = 15.0):
         self._log("read_current_preset")
         self._maybe_drop_first_read("RecallPreset", timeout)

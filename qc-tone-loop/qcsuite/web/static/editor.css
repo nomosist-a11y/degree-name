@@ -370,6 +370,22 @@ body.ed-dragging .sbar-notice::before { content: "グリッドの外に落とす
   .ed-row.lane::before { left: 40px; }
 }
 
+/* ---------------------------------------------------------------- presets (editor_presets.js) */
+.pb-name[role="button"] { cursor: pointer; }
+.pb-name[role="button"]:hover { background: #222; }
+dialog.ed-dlg.ed-dlg-wide { width: min(560px, calc(100vw - 32px)); max-width: none; }
+.ed-dlg-note { font-size: 12.5px; color: #9a9a9a; margin: 0 0 10px; line-height: 1.6; }
+.ed-dlg-link { color: #a9c4ff; font-size: 13px; margin-right: auto; align-self: center; }
+.ed-plist { max-height: min(52vh, 460px); overflow-y: auto; border: 1px solid #2c2c2c; border-radius: 8px; margin-bottom: 14px; }
+.ed-pitem { display: flex; gap: 12px; width: 100%; text-align: left; background: transparent; border: 0;
+  border-bottom: 1px solid #242424; color: #e6e6e6; padding: 9px 12px; cursor: pointer; font: inherit; }
+.ed-pitem:hover { background: #252525; }
+.ed-pitem.cur { background: #2b2a1c; color: #f2c94c; }
+.ed-pitem .slot { flex: 0 0 38px; color: #8a8a8a; font-variant-numeric: tabular-nums; }
+.ed-pitem.cur .slot { color: #f2c94c; }
+.ed-pitem .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+dialog.ed-dlg .row { display: flex; gap: 10px; justify-content: flex-end; }
+
 /* ---------------------------------------------------------------- real-gear photos (editor_photos.js) */
 .ed-pp { display: flex; align-items: stretch; gap: 8px; }
 .ed-pp > .cc { flex: 1 1 auto; min-width: 0; }

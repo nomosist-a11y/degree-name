@@ -43,12 +43,13 @@ const EdLayout = (() => {
       res = await edFetch(`/api/editor/layout/${action}`, body);
       (res.warnings || []).forEach(w => toast(w, true));
       if (okText && res.id !== null) toast(`${okText}(保存はしていません。取り消しで戻せます)`);
+      await loadGrid();
     } catch (e) {
       /* edFetch showed why (409: changed on the unit, nothing written) */
+      await loadGrid();
     } finally {
       ED.busy = false;
     }
-    await loadGrid();
     loadHistory();
     return res;
   }
@@ -191,7 +192,7 @@ const EdLayout = (() => {
       items.push({ sep: true }, { head: `分岐(並列の経路は行${r.row + 2})` });
       if (r.split) items.push({ info: `列${r.split[0] + 1} で分岐、${r.split[1] < 0 ? "合流しない" : `列${r.split[1] + 1} で合流`}` });
       items.push({ label: r.split ? "分岐の位置を変える…" : "分岐を作る…", onClick: () => splitDialog(r) });
-      if (r.split) items.push({ label: "分岐を外す", onClick: () => act("split", { row: r.row, clear: true }, `行${r.row + 1} の分岐を外しました`) });
+      if (r.split) items.push({ label: "分岐を外す", onClick: () => act("split", { row: r.row, clear: true, expect: r.split }, `行${r.row + 1} の分岐を外しました`) });
     }
     items.push({ sep: true }, { info: "本体全体の入出力の設定(I/O、Global EQ など)はここでは変えません。" });
     openMenu(anchor, items);
@@ -215,7 +216,7 @@ const EdLayout = (() => {
       const s = Number(split.value), m = Number(mix.value);
       if (m !== -1 && m <= s) { toast("合流は分岐より右の列にしてください", true); return; }
       close();
-      act("split", { row: r.row, split: s, mix: m }, `行${r.row + 1} に分岐を作りました`);
+      act("split", { row: r.row, split: s, mix: m, expect: r.split || null }, `行${r.row + 1} に分岐を作りました`);
     });
     document.body.append(dlg);
     dlg.showModal();
@@ -251,7 +252,9 @@ const EdLayout = (() => {
       loadGrid();
     };
     ok.addEventListener("click", submit);
-    input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); submit(); }
+    });
     document.body.append(dlg);
     dlg.showModal();
     input.select();
@@ -261,13 +264,14 @@ const EdLayout = (() => {
     const lab = (labels[i] || "").trim();
     const btn = el("button", { type: "button", class: `pb-scene ${active === s ? "on" : ""}`,
       "aria-pressed": String(active === s),
-      title: `${lab ? `${s}: ${lab}\n` : ""}クリックでシーン ${s} に切り替え(本体の音が変わります)。ダブルクリックで名前を変更` }, s);
-    let timer = null;
-    btn.addEventListener("click", () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => { if (active !== s) switchScene(i); }, 220);
+      title: `${lab ? `${s}: ${lab}\n` : ""}クリックでシーン ${s} に切り替え(本体の音が変わります)。右クリック(長押し)で名前を変更` }, s);
+    btn.addEventListener("click", () => { if (active !== s) switchScene(i); });
+    btn.addEventListener("contextmenu", e => {
+      e.preventDefault();
+      openMenu(btn, [{ head: `シーン ${s}${lab ? `: ${lab}` : ""}` },
+        { label: "名前を変える…", onClick: () => renameScene(i) },
+        active !== s ? { label: `シーン ${s} に切り替える`, onClick: () => switchScene(i) } : null]);
     });
-    btn.addEventListener("dblclick", e => { e.preventDefault(); clearTimeout(timer); renameScene(i); });
     return btn;
   }
 
@@ -285,11 +289,15 @@ const EdLayout = (() => {
   }
 
   function endDrag() {
+    const wanted = drag && ED.reloadWanted;
     drag = null;
+    if (wanted && !ED.gesture) { ED.reloadWanted = false; setTimeout(loadGrid, 0); }
     document.body.classList.remove("ed-dragging", "ed-dragging-model");
     document.querySelectorAll(".ed-cell.drop-ok, .ed-cell.drop-swap, .ed-cell.drop-dup")
       .forEach(n => n.classList.remove("drop-ok", "drop-swap", "drop-dup"));
   }
+
+  const cellNodeAt = (row, col) => document.querySelector(`.ed-cell[data-row="${row}"][data-col="${col}"]`);
 
   function wireCell(node) {
     const row = Number(node.dataset.row), col = Number(node.dataset.col);
@@ -298,21 +306,21 @@ const EdLayout = (() => {
       node.draggable = true;
       node.addEventListener("dragstart", e => {
         if (ED.busy || ED.gesture) { e.preventDefault(); return; }
-        drag = { kind: "block", row, col, model_id: b.model_id };
+        drag = { kind: "block", row, col, model_id: b.model_id, at: Date.now() };
         e.dataTransfer.effectAllowed = "copyMove";
         e.dataTransfer.setData(T_BLOCK, JSON.stringify({ row, col, model_id: b.model_id }));
         e.dataTransfer.setData("text/plain", nameOf(b));
         requestAnimationFrame(() => document.body.classList.add("ed-dragging"));
       });
       node.addEventListener("dragend", endDrag);
-      node.addEventListener("contextmenu", e => { e.preventDefault(); selectCell(row, col, { focus: false }); openMenu(node, blockMenuItems(b)); });
+      node.addEventListener("contextmenu", e => { e.preventDefault(); selectCell(row, col, { focus: false }); openMenu(cellNodeAt(row, col) || node, blockMenuItems(cellAt(row, col) || b)); });
       const x = el("button", { type: "button", class: "ed-x", tabindex: "-1", "aria-label": `${nameOf(b)} を削除`,
         title: "削除(取り消しで戻せます)" }, svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, svg("path", { d: "M7 7l10 10M17 7 7 17" })));
       x.addEventListener("click", e => { e.stopPropagation(); remove(b); });
       x.addEventListener("mousedown", e => e.stopPropagation());
       node.append(x);
     } else {
-      node.addEventListener("contextmenu", e => { e.preventDefault(); selectCell(row, col, { focus: false }); openMenu(node, emptyMenuItems(row, col)); });
+      node.addEventListener("contextmenu", e => { e.preventDefault(); selectCell(row, col, { focus: false }); openMenu(cellNodeAt(row, col) || node, emptyMenuItems(row, col)); });
     }
     node.addEventListener("dragover", e => {
       const p = payload(e);
@@ -350,6 +358,10 @@ const EdLayout = (() => {
   });
   document.addEventListener("drop", e => {
     if (!drag || drag.kind !== "block" || e.target.closest(".ed-grid")) return;
+    if (Date.now() - drag.at > 60000 || !e.dataTransfer || ![...e.dataTransfer.types].includes(T_BLOCK)) {
+      endDrag();               // a stale drag (its source was redrawn) or someone else's drop
+      return;
+    }
     e.preventDefault();
     const p = drag;
     endDrag();
@@ -361,7 +373,7 @@ const EdLayout = (() => {
     if (m.usable === false) return;
     item.draggable = true;
     item.addEventListener("dragstart", e => {
-      drag = { kind: "model", id: m.id };
+      drag = { kind: "model", id: m.id, at: Date.now() };
       e.dataTransfer.effectAllowed = "copy";
       e.dataTransfer.setData(T_MODEL, String(m.id));
       e.dataTransfer.setData("text/plain", m.name);
@@ -403,6 +415,7 @@ const EdLayout = (() => {
     const t = e.target;
     if (typingTarget(t) || openPop || document.querySelector("dialog[open]")) return;
     if (t && t.closest && (t.closest('[role="slider"]') || t.closest(".drawer"))) return;
+    if (e.repeat) return;
     const mod = e.metaKey || e.ctrlKey;
     const b = ED.sel ? findBlock(ED.sel) : null;
     if ((e.key === "Delete" || e.key === "Backspace") && !mod && b) {
@@ -419,6 +432,7 @@ const EdLayout = (() => {
     }
   });
 
-  return { decorate, wireDevice, blockMenuItems, sceneButton, copy, paste, remove };
+  return { decorate, wireDevice, blockMenuItems, sceneButton, copy, paste, remove,
+    dragging: () => !!drag && Date.now() - drag.at < 60000 };
 })();
 window.EdLayout = EdLayout;

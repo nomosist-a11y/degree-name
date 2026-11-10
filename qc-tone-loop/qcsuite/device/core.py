@@ -69,6 +69,41 @@ def folder_kind(key: str, is_factory: bool) -> str:
     return "other"
 
 
+class _PushTracker:
+    """Counts pushes of some message types (a list-like sink in pyquadcortex's
+    transport collectors) and keeps the last SetlistPosition."""
+
+    def __init__(self):
+        self.seq = 0
+        self.slot = None
+        self.types = {}
+
+    def append(self, message):
+        self.seq += 1
+        name = type(message).__name__
+        self.types[name] = self.types.get(name, 0) + 1
+        if name == "SetlistPositionMessage":
+            key = str(getattr(message, "folder_key", "") or "")
+            if key:
+                self.slot = (key.rstrip("/") if key.startswith("/") else key,
+                             int(getattr(message, "position", 0)))
+
+    @classmethod
+    def attach(cls, qc, names):
+        try:
+            t = qc._t
+            from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+            tracker = cls()
+            with t._lock:
+                for name in names:
+                    msg_cls = getattr(pa, name, None)
+                    if msg_cls is not None:
+                        t._collectors.append((msg_cls, None, tracker))
+            return tracker
+        except Exception:                                    # noqa: BLE001 - private API
+            return False
+
+
 class Device:
     """Retrying, guarded access to one Quad Cortex (real or fake)."""
 
@@ -82,6 +117,61 @@ class Device:
         self._lock = threading.RLock()
         self._version: dict | None = None
         self._folders_cache: tuple[float, list[dict]] | None = None
+        self._tracker = None
+        self._slot: tuple[str, int] | None = None      # last slot recalled from here
+
+    # -- what changed on the unit (pushes; no polling of the unit) -----------
+
+    #: Pushes that mean "the live preset, scene or loaded slot changed".
+    TRACKED_PUSHES = ("GridMessage", "GridMoveMessage", "RecallPresetMessage", "SceneMessage",
+                      "SceneLabelMessage", "SceneColorMessage", "SceneCopyMessage",
+                      "PresetDirtyMessage", "SetlistPositionMessage")
+
+    def changes(self) -> dict:
+        """A counter of pushes from the unit, for the editor to follow the unit.
+
+        The unit pushes Grid / Scene / RecallPreset / PresetDirty /
+        SetlistPosition to a client that subscribed at connect (pyquadcortex
+        ``_SUBSCRIBE_TYPES``); edits on its screen and footswitches arrive the
+        same way. This listens to them through the transport's non-consuming
+        collectors - a private pyquadcortex API, so when it is missing the
+        answer says ``mode: "poll"`` and the page re-reads the grid now and
+        then instead. Our own writes' echoes count too (harmless: one re-read).
+        """
+        if hasattr(self.qc, "unit_changes"):                 # the fake unit
+            seq, slot = self.qc.unit_changes()
+            return {"mode": "push", "seq": seq, "slot": self._slot_view(slot)}
+        tracker = self._tracker
+        if tracker is None:
+            tracker = self._tracker = _PushTracker.attach(self.qc, self.TRACKED_PUSHES)
+        if tracker is False:
+            return {"mode": "poll", "seq": None, "slot": self._slot_view(self._slot)}
+        return {"mode": "push", "seq": tracker.seq,
+                "slot": self._slot_view(tracker.slot or self._slot)}
+
+    @staticmethod
+    def _slot_view(slot):
+        if not slot:
+            return None
+        key, position = slot
+        return {"folder": key, "position": position,
+                "slot": pq.position_to_slot(position) if 0 <= position < 256 else "",
+                "folder_name": guard.folder_name(key)}
+
+    def current_slot(self) -> dict | None:
+        """Which setlist slot is loaded, when known (a push, our own recall, or a READ)."""
+        info = self.changes().get("slot")
+        if info:
+            return info
+        try:
+            msg = self.qc._read_state(pq.proto.ProductionAutomation_pb2.SetlistPositionMessage,
+                                      None, 3.0)
+            key = str(msg.folder_key).rstrip("/") if str(msg.folder_key).startswith("/") \
+                else str(msg.folder_key)
+            self._slot = (key, int(msg.position))
+        except Exception:                                    # noqa: BLE001 - unverified READ
+            return None
+        return self._slot_view(self._slot)
 
     # -- plumbing ------------------------------------------------------------
 
@@ -222,6 +312,7 @@ class Device:
                                   " を呼び出しました(音が切り替わります)")
         with self._lock:
             self.qc.recall_preset(self.setlist_arg(key), position)
+        self._slot = (key, int(position))
 
     def switch_scene(self, scene: int):
         with self._lock:

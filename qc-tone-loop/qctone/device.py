@@ -213,8 +213,8 @@ def validate(patch: dict, grid: dict, catalog) -> list:
             if kind == "set_split":
                 sc, mc = op.get("split"), op.get("mix")
                 if not isinstance(sc, int) or not 0 <= sc < COLUMNS or not isinstance(mc, int) \
-                        or not (mc == -1 or sc < mc < COLUMNS):
-                    raise PatchError(f"{where}: need split 0-{COLUMNS - 1} and mix > split (or -1)")
+                        or not -1 <= mc < COLUMNS:
+                    raise PatchError(f"{where}: need split 0-{COLUMNS - 1} and mix 0-{COLUMNS - 1} or -1")
             resolved.append(op)
             continue
         if kind in ("set_input", "set_output"):

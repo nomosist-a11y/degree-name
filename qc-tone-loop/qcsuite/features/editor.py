@@ -385,6 +385,13 @@ def _locate(grid: dict, req: dict) -> dict:
     return block
 
 
+def _changed(before: dict, after: dict) -> bool:
+    strip = lambda g: (g["rows"], sorted((b["row"], b["col"], b["model_id"], b.get("bypassed"),
+                                          tuple(p.get("value") for p in b["params"]))
+                                         for b in g["blocks"]))
+    return strip(before) != strip(after)
+
+
 def _lossy(block: dict) -> bool:
     """A block whose state includes a string (capture file, IR): lost on re-placing."""
     return block["model_id"] in inert.CAPTURE_MODELS or \
@@ -675,15 +682,34 @@ class EditorSession:
             return handler(device, _read(device), req)
 
     def _layout_commit(self, device, before: dict, ops: list, label: str,
-                       expect: dict | None = None, notes=()) -> dict:
-        """Apply ``ops`` as one patch, read back, record one history entry.
+                       expect: dict | None = None, notes=(), stages=None) -> dict:
+        """Apply ``ops`` (or ``stages``: lists of ops, each checked before the
+        next), read back, record one history entry.
 
         ``expect`` maps (row, col) -> model id (None = empty) that must hold
         afterwards; a mismatch is reported (the entry stays, so undo works).
+        A failure part-way still records what changed, so it can be undone.
         """
-        result = device.apply_patch({"note": "editor", "ops": ops})
+        stages = stages or [(ops, None)]
+        warnings = list(notes)
+        done = []
+        try:
+            for stage_ops, check in stages:
+                result = device.apply_patch({"note": "editor", "ops": stage_ops})
+                warnings += result["warnings"]
+                done += stage_ops
+                if check is not None:
+                    check(_read(device))
+        except Exception:
+            if done or ops:
+                after = _read(device)
+                if _changed(before, after):
+                    panel.record(device.mock, {"note": "editor", "ops": done}, before, after,
+                                 instruction=label + "(途中で失敗)", engine=ENGINE,
+                                 summary=[label], warnings=warnings)
+            raise
+        ops = done
         after = _read(device)
-        warnings = list(result["warnings"]) + list(notes)
         for (row, col), model_id in (expect or {}).items():
             got = _block(after, row, col)
             if (got["model_id"] if got else None) != model_id:
@@ -716,27 +742,53 @@ class EditorSession:
         if dst == src:
             return {"id": None, "warnings": [], "note": NOT_SAVED}
         other = _block(before, *dst)
-        if other is not None and other["model_id"] != req.get("to_model_id", other["model_id"]):
-            raise EditorConflict(f"行{dst[0] + 1} 列{dst[1] + 1} のブロックが画面と違います。"
+        shown = req.get("to_model_id")
+        if (other["model_id"] if other else None) != shown and \
+                (shown is not None or other is not None) and "to_model_id" in req:
+            raise EditorConflict(f"行{dst[0] + 1} 列{dst[1] + 1} が画面と違います。"
                                  "何も書き込まず、画面を読み直します。")
+        if other is not None and "to_model_id" not in req:
+            raise EditorConflict(f"行{dst[0] + 1} 列{dst[1] + 1} は空いていません。"
+                                 "何も書き込まず、画面を読み直します。")
+        stages = None
         if other is None:
             ops = [{"op": "move_block", "row": src[0], "col": src[1],
                     "to_row": dst[0], "to_col": dst[1]}]
+            if isinstance(block.get("bypassed"), bool):
+                # where a cell's bypass goes on a move is not documented: say it again
+                ops.append({"op": "bypass", "row": dst[0], "col": dst[1],
+                            "bypassed": block["bypassed"]})
             label = f"エディター: {block['model']} を 行{src[0] + 1} 列{src[1] + 1} → " \
                     f"行{dst[0] + 1} 列{dst[1] + 1} へ移動"
             expect = {src: None, dst: block["model_id"]}
         else:
             # Swap, like dropping a block onto another in Cortex Control: park the
-            # target in a free cell (same row first), move, then bring it back.
+            # target in a free cell (same row first), check it got there, then move
+            # the dragged block in and bring the parked one back.
+            if other["model_id"] == block["model_id"]:
+                raise EditorError("同じモデルのブロック同士は入れ替えられません(取り消しで"
+                                  "見分けがつかないため)。片方を空きマスへ動かしてください。")
             park = self._free_cell(before, dst[0], avoid=(src, dst))
             if park is None:
                 raise EditorError("グリッドに空きマスが無いので入れ替えられません。")
-            ops = [{"op": "move_block", "row": dst[0], "col": dst[1], "to_row": park[0],
-                    "to_col": park[1]},
-                   {"op": "move_block", "row": src[0], "col": src[1], "to_row": dst[0],
-                    "to_col": dst[1]},
-                   {"op": "move_block", "row": park[0], "col": park[1], "to_row": src[0],
-                    "to_col": src[1]}]
+            first = [{"op": "move_block", "row": dst[0], "col": dst[1], "to_row": park[0],
+                      "to_col": park[1]}]
+            rest = [{"op": "move_block", "row": src[0], "col": src[1], "to_row": dst[0],
+                     "to_col": dst[1]},
+                    {"op": "move_block", "row": park[0], "col": park[1], "to_row": src[0],
+                     "to_col": src[1]}]
+            for b, cell in ((block, dst), (other, src)):
+                if isinstance(b.get("bypassed"), bool):
+                    rest.append({"op": "bypass", "row": cell[0], "col": cell[1],
+                                 "bypassed": b["bypassed"]})
+
+            def parked(grid, park=park, dst=dst, other=other):
+                here, there = _block(grid, *park), _block(grid, *dst)
+                if here is None or here["model_id"] != other["model_id"] or there is not None:
+                    raise EditorError("入れ替えの 1 手目(空きマスへの退避)を本体が受け付けません"
+                                      "でした。それ以上は送っていません。画面を読み直します。")
+            stages = [(first, parked), (rest, None)]
+            ops = first + rest
             label = f"エディター: {block['model']} と {other['model']} を入れ替え" \
                     f"(行{src[0] + 1} 列{src[1] + 1} ⇄ 行{dst[0] + 1} 列{dst[1] + 1})"
             expect = {src: other["model_id"], dst: block["model_id"]}
@@ -744,7 +796,7 @@ class EditorSession:
         if dst[0] != src[0] or (other is not None and park[0] != dst[0]):
             notes.append("行をまたぐ移動では、本体が並列の経路(分岐)を自動で作ることがあります。"
                          "グリッドの分岐の表示を確かめてください。")
-        return self._layout_commit(device, before, ops, label, expect, notes)
+        return self._layout_commit(device, before, ops, label, expect, notes, stages)
 
     def _delete(self, device, before: dict, req: dict) -> dict:
         block = _locate(before, req)
@@ -772,6 +824,8 @@ class EditorSession:
         if target is None or target["model_id"] != model_id:
             ops.append({"op": "set_block", "row": row, "col": col, "model": model_id})
         names = {spec.name for spec in model.parameters}
+        switches = {spec.name for spec in model.parameters
+                    if spec.option_count or spec.type in ("switch", "comboBox", "rotarySwitch")}
         skipped = []
         for prm in source.get("params") or []:
             name = prm.get("name")
@@ -782,7 +836,7 @@ class EditorSession:
             elif "options" in prm and prm.get("option") in (prm.get("options") or []):
                 ops.append({"op": "set_option", "row": row, "col": col, "param": name,
                             "option": prm["option"]})
-            elif "option" in prm:
+            elif "option" in prm or name in switches:
                 skipped.append(name)          # a switch without option names: never by value
             elif isinstance(prm.get("value"), (int, float)) and 0 <= prm["value"] <= 1:
                 ops.append({"op": "set_param", "row": row, "col": col, "param": name,
@@ -829,7 +883,13 @@ class EditorSession:
         if isinstance(block.get("bypassed"), bool):
             ops.append({"op": "bypass", "row": row, "col": col, "bypassed": block["bypassed"]})
         label = f"エディター: {_where(block)} {block['model']} を初期値にリセット"
-        return self._layout_commit(device, before, ops, label, {(row, col): block["model_id"]})
+        res = self._layout_commit(device, before, ops, label, {(row, col): block["model_id"]})
+        now = _block(_read(device), row, col)
+        if now is not None and [p.get("value") for p in now["params"]] == \
+                [p.get("value") for p in block["params"]]:
+            res["warnings"].append("本体のつまみの値が変わりませんでした(もともと初期値だったか、"
+                                   "本体が置き直しを無視した可能性があります)。")
+        return res
 
     def _port(self, device, before: dict, req: dict) -> dict:
         row = req.get("row")
@@ -858,6 +918,10 @@ class EditorSession:
         if row not in (0, 2):
             raise EditorError("分岐を作れるのは行 1 と行 3 だけです(本体の仕様)。")
         line = next(r for r in before["rows"] if r["row"] == row)
+        if "expect" in req and req["expect"] != line.get("split"):
+            raise EditorConflict(f"行{row + 1} の分岐が画面と違います。何も書き込まず、画面を読み直します。")
+        if not req.get("clear") and [req.get("split"), req.get("mix")] == line.get("split"):
+            return {"id": None, "warnings": [], "note": NOT_SAVED}
         if req.get("clear"):
             if line.get("split") is None:
                 return {"id": None, "warnings": [], "note": NOT_SAVED}
@@ -870,6 +934,52 @@ class EditorSession:
             joined = "合流しない" if mc == -1 else f"列{mc + 1} で合流" if isinstance(mc, int) else "?"
             label = f"エディター: 行{row + 1} を {where}・{joined}(並列の経路は行{row + 2})"
         return self._layout_commit(device, before, [op], label)
+
+    # -- presets (loading one changes the sound and drops unsaved edits) ----------------
+
+    def recall(self, device, req: dict) -> dict:
+        """Load a stored preset: ``{folder, position}`` or ``{step: +1 | -1}``.
+
+        Like Cortex Control, asks first only when the live preset has unsaved
+        edits: without ``confirm: true`` that case answers ``needs_confirm``
+        and loads nothing. Undo history stops at the switch.
+        """
+        with self._edit:
+            self._wait_idle(device)
+            step = req.get("step")
+            if step in (1, -1):
+                here = device.current_slot()
+                if not here:
+                    raise EditorError("本体で読み込まれているスロットが分かりません。プリセット名を"
+                                      "クリックして一覧から選んでください。")
+                key = here["folder"]
+                listing = device.presets(key)
+                taken = sorted(p["index"] for p in listing if p["index"] >= 0)
+                if not taken:
+                    raise EditorError("このセットリストにプリセットがありません。")
+                later = [i for i in taken if (i - here["position"]) * step > 0]
+                position = (min(later) if step > 0 else max(later)) if later else \
+                    (taken[0] if step > 0 else taken[-1])          # wrap like the unit
+            else:
+                key, position = req.get("folder"), req.get("position")
+                if not isinstance(key, str) or not key or not isinstance(position, int) \
+                        or not 0 <= position < 256:
+                    raise EditorError("folder と position(0〜255)を指定してください。")
+                listing = device.presets(key)
+            name = next((p["name"] for p in listing if p["index"] == position), None)
+            if name is None:
+                raise EditorError(f"{qslot(position)} は空きスロットです。")
+            dirty = device.preset_dirty()
+            if dirty and not req.get("confirm"):
+                return {"needs_confirm": True, "folder": key, "position": position,
+                        "slot": qslot(position), "name": name,
+                        "message": "本体に保存していない編集があります。呼び出すと、その編集は消えます"
+                                   "(音も切り替わります)。"}
+            device.recall(key, position)
+            panel.mark_preset_change(device.mock, f"{key} {qslot(position)} {name}")
+            return {"loaded": True, "folder": key, "position": position,
+                    "slot": qslot(position), "name": name,
+                    "note": "プリセットを呼び出しました(音が切り替わります)。取り消しの履歴はここで区切られます。"}
 
     # -- scenes (not grid edits: no history) --------------------------------------------
 
@@ -1047,6 +1157,30 @@ SIDEBAR = [
     ("looper", "LOOPER", ("Loopers",)),
 ]
 _SIDEBAR_COLOR = {"plugins": "cmp"}
+
+
+def qslot(position: int) -> str:
+    import pyquadcortex as pq
+    return pq.position_to_slot(position) if 0 <= position < 256 else str(position)
+
+
+def preset_list(device, folder: str | None = None) -> dict:
+    """Setlists (cached ~60 s: a fresh listing takes ~20 s) and one setlist's presets."""
+    setlists = [{"key": f["key"], "name": f["name"], "kind": f["kind"]}
+                for f in device.setlists_cached()]
+    here = device.current_slot()
+    key = folder or (here["folder"] if here else None) or \
+        next((f["key"] for f in setlists if f["kind"] == "user"), None)
+    presets = []
+    if key:
+        presets = [{"position": p["index"], "slot": p["slot"], "name": p["name"]}
+                   for p in device.presets(key) if p["index"] >= 0]
+    return {"setlists": setlists, "folder": key, "presets": presets, "current": here}
+
+
+def changes(device) -> dict:
+    """What the page needs to follow the unit: a push counter (no unit I/O)."""
+    return device.changes()
 
 
 def block_copy(device, row: int, col: int) -> dict:

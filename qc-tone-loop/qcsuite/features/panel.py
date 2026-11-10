@@ -251,6 +251,9 @@ def _state(mock: bool) -> dict:
         if e["kind"] == "apply":
             applied.append(e)
             undone.clear()             # a new change ends the redo chain
+        elif e["kind"] == "barrier":   # another preset was loaded: nothing before it applies
+            applied.clear()
+            undone.clear()
         elif e["kind"] == "undo":
             undone.append(e["of"])
         elif e["kind"] == "redo" and e["of"] in undone:
@@ -296,7 +299,18 @@ def _param_map(block: dict) -> dict:
     return {p["name"]: p for p in block["params"]}
 
 
-def restore_patch(saved: dict, current: dict) -> tuple[dict, list[str]]:
+def _is_switch(block: dict, name: str, catalog) -> bool:
+    model = catalog.get(block["model_id"]) if catalog is not None else None
+    if model is None:
+        return False
+    try:
+        spec = model.parameter(name)
+    except KeyError:
+        return False
+    return bool(spec.option_count or spec.type in ("switch", "comboBox", "rotarySwitch"))
+
+
+def restore_patch(saved: dict, current: dict, catalog=None) -> tuple[dict, list[str]]:
     """A patch turning ``current`` back into ``saved`` (two qctone grid snapshots).
 
     Built on ``qctone.device.restore_ops``, then trimmed to what differs, with
@@ -305,7 +319,11 @@ def restore_patch(saved: dict, current: dict) -> tuple[dict, list[str]]:
     """
     base = qdevice.restore_ops(saved, current)["ops"]
     # Compare against the grid as it will be after the moves restore makes.
+    moves = [op for op in base if op["op"] == "move_block"]
     cur_cells = {(b["row"], b["col"]): b for b in qdevice._moves(saved, current)[1]["blocks"]}
+    # Whether a cell's bypass travels with a moved block is not documented for the
+    # unit, so a moved block's bypass is always written back.
+    moved_to = {(op["to_row"], op["to_col"]) for op in moves}
     saved_cells = {(b["row"], b["col"]): b for b in saved["blocks"]}
     replaced = {(op["row"], op["col"]) for op in base if op["op"] == "set_block"}
     ops, notes = [], []
@@ -321,6 +339,11 @@ def restore_patch(saved: dict, current: dict) -> tuple[dict, list[str]]:
                 ops.append({"op": "set_option", "row": op["row"], "col": op["col"],
                             "param": op["param"], "option": sp["option"]})
                 continue
+            if "option" not in sp and _is_switch(saved_cells[cell], op["param"], catalog):
+                if cp.get("value") != sp.get("value"):
+                    notes.append(f"行{op['row'] + 1} 列{op['col'] + 1} {op['param']}: スイッチの選択肢の"
+                                 "名前が分からないため戻しません(本体で確認してください)。")
+                continue
             if "option" in sp:          # a list whose option names are unknown
                 if cp.get("value") != sp.get("value"):
                     notes.append(f"行{op['row'] + 1} 列{op['col'] + 1} {op['param']}: 選択肢の名前が"
@@ -330,7 +353,8 @@ def restore_patch(saved: dict, current: dict) -> tuple[dict, list[str]]:
                     abs(cp["value"] - op["value"]) < 1e-4:
                 continue
         elif op["op"] == "bypass":
-            if cell not in replaced and cur_cells.get(cell, {}).get("bypassed") == op["bypassed"]:
+            if cell not in replaced and cell not in moved_to and \
+                    cur_cells.get(cell, {}).get("bypassed") == op["bypassed"]:
                 continue
         ops.append(op)
     if any("text" in p for b in saved["blocks"] for p in b["params"]):
@@ -338,9 +362,34 @@ def restore_patch(saved: dict, current: dict) -> tuple[dict, list[str]]:
     return {"note": "panel restore", "ops": ops}, notes
 
 
+def mark_preset_change(mock: bool, note: str = "") -> None:
+    """Another preset was loaded: undo / redo must not reach past this point
+    (restoring an old preset's snapshot would rewrite the new preset)."""
+    _append(mock, {"kind": "barrier", "note": note, "at": time.strftime("%Y-%m-%d %H:%M:%S")})
+
+
+def _layout(grid: dict) -> set:
+    return {(b["row"], b["col"], b["model_id"]) for b in grid["blocks"]}
+
+
+def _same_preset(device, expected: dict) -> None:
+    """Refuse an undo / redo when the live grid's blocks are not where the
+    history expects them - another preset was loaded (on the unit, or by a
+    footswitch) or blocks were moved on the unit's screen."""
+    live = device.grid()
+    if expected.get("active_scene") and live.get("active_scene") and \
+            live["active_scene"] != expected["active_scene"]:
+        raise PanelError(f"この変更はシーン {expected['active_scene']} で行いました。いまはシーン "
+                         f"{live['active_scene']} なので、シーン {expected['active_scene']} に戻してから"
+                         "取り消してください(バイパスはシーンごとのため)。何も書き込んでいません。")
+    if _layout(live) != _layout(expected):
+        raise PanelError("本体のグリッドが、履歴の時点と違います(本体でプリセットを切り替えたか、"
+                         "ブロックを動かした可能性があります)。何も書き込んでいません。")
+
+
 def _restore(device, saved: dict) -> dict:
     current = device.grid()
-    patch, notes = restore_patch(saved, current)
+    patch, notes = restore_patch(saved, current, device.catalog)
     applied = device.apply_patch(patch)["applied"] if patch["ops"] else 0
     return {"applied": applied, "notes": notes}
 
@@ -351,6 +400,7 @@ def undo(device) -> dict:
     if not live:
         raise PanelError("取り消せる変更がありません。")
     entry = live[-1]
+    _same_preset(device, entry["after"])
     result = _restore(device, entry["before"])
     _append(device.mock, {"kind": "undo", "of": entry["id"],
                           "at": time.strftime("%Y-%m-%d %H:%M:%S")})
@@ -363,6 +413,7 @@ def redo(device) -> dict:
         raise PanelError("やり直せる変更がありません。")
     entry_id = state["undone"][-1]
     entry = next(e for e in state["applied"] if e["id"] == entry_id)
+    _same_preset(device, entry["before"])
     result = _restore(device, entry["after"])
     _append(device.mock, {"kind": "redo", "of": entry_id,
                           "at": time.strftime("%Y-%m-%d %H:%M:%S")})
