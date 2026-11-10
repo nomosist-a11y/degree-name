@@ -54,7 +54,7 @@ class Rig:
             self.device.notice("sound_change", render_mod.MONITOR_WARNING)
             self.warned_monitor = True
         with self.device._lock:
-            return render_mod.render(self.renderer, di, sr)
+            return render_mod.render(self.renderer, di, sr, device=self.device)
 
 
 def connect_real():

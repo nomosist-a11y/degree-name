@@ -202,3 +202,25 @@ def test_calibration_is_measured_once_and_refuses_a_spread(rig):
             out = np.concatenate([np.zeros(d), pre, mono, np.zeros(int(render.TAIL_S * sr))])
             return np.stack([out, out], axis=1)[: len(pre) + len(mono) + int(render.TAIL_S * sr)]
     assert render.calibrate(Wobbly()) is None
+
+
+def test_clean_calibration_puts_every_bypass_back(rig):
+    """2026-11-10: through an amp and a gate the burst onset jittered 5-7 ms late,
+    so calibration bypasses the grid for the bursts - and must restore it."""
+    d = rig.device
+    d.read_stored("/media/p4/Presets/kami", 6)
+    d.prepare_reamp()
+    blocks = d.grid()["blocks"]
+    first = blocks[0]
+    d.apply_patch({"ops": [{"op": "bypass", "row": first["row"], "col": first["col"], "bypassed": True}]})
+    before = {(b["row"], b["col"]): b["bypassed"] for b in d.grid()["blocks"]}
+    seen = []
+    real = rig.renderer.playrec
+    def spy(mono, sr=SR):
+        seen.append(all(b["bypassed"] for b in d.grid()["blocks"]))
+        return real(mono, sr)
+    rig.renderer.playrec = spy
+    lat = render.calibrate(rig.renderer, device=d)
+    assert lat == pytest.approx(render.MEASURED_LATENCY_MS, abs=0.5)
+    assert seen and all(seen)                                  # bursts went through a clean grid
+    assert {(b["row"], b["col"]): b["bypassed"] for b in d.grid()["blocks"]} == before

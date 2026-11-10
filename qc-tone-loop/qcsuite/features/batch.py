@@ -134,7 +134,7 @@ def reamp_aligned(rig, di, sr: int) -> tuple[render.RenderResult, dict]:
         rig.warned_monitor = True
     with rig.device._lock:
         if render.fixed_latency_ms() is None:
-            render.calibrate(rig.renderer, sr)
+            render.calibrate(rig.renderer, sr, device=rig.device)
         rec = rig.renderer.playrec(padded, sr)
     if rec.ndim == 1:
         rec = np.stack([rec, rec], axis=1)

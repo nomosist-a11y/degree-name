@@ -231,19 +231,51 @@ CAL_REPEATS = 3
 CAL_SPREAD_MS = 1.0
 
 
-def calibrate(renderer, sr: int = SR) -> float | None:
+def calibrate(renderer, sr: int = SR, device=None) -> float | None:
     """Measure the round trip with a test burst; cached on the renderer.
 
-    The unit's reamp round trip is constant (313.5 ms on the player's unit,
-    four streams, 2026-10-28), but measuring it on the DI itself is not: a
-    high-gain amp's hiss and flattened attack put the DI-based estimates 50-70
-    ms early. So each process calibrates once - ``CAL_REPEATS`` bursts, median,
-    refused if they spread more than ``CAL_SPREAD_MS`` - and aligns every
-    render with that. Plays a short beep through the live grid.
+    Within one session the round trip is constant to the sample, but it is
+    not a fixed number: 313.5 ms on 2026-10-28, 265.35 ms on 2026-11-10 (same
+    unit, clean path both times). And it cannot be read off the DI: a
+    high-gain amp lifts the quiet start of the DI (and hiss) above the onset
+    threshold, which put DI-based estimates 50-70 ms early. So each process
+    calibrates once - ``CAL_REPEATS`` bursts, median, refused if they spread
+    more than ``CAL_SPREAD_MS`` - and aligns every render with that.
+
+    With ``device``, the bursts go through a CLEAN grid: every active block is
+    bypassed for the measurement and put back afterwards (read back, resent if
+    the unit dropped it). Through the real grid an amp and a noise gate delay
+    the burst's onset by 5-7 ms and make it jitter (measured 2026-11-10).
+    Unsaved, like every grid edit. Plays a short beep.
     """
     cached = getattr(renderer, "calibrated_latency_ms", None)
     if cached is not None:
         return cached
+    if device is not None:
+        return _calibrate_clean(renderer, sr, device)
+    return _calibrate_bursts(renderer, sr)
+
+
+def _calibrate_clean(renderer, sr: int, device) -> float | None:
+    from qcsuite.rebuild import _settle_bypass
+    active = [b for b in device.grid()["blocks"] if not b.get("bypassed")]
+    off = [{"op": "bypass", "row": b["row"], "col": b["col"], "bypassed": True} for b in active]
+    back = [{"op": "bypass", "row": b["row"], "col": b["col"], "bypassed": False} for b in active]
+    if off:
+        device.apply_patch({"note": "latency calibration: clean path", "ops": off})
+        _settle_bypass(device, off)
+    try:
+        value = _calibrate_bursts(renderer, sr)
+    finally:
+        if back:
+            device.apply_patch({"note": "latency calibration: put the grid back", "ops": back})
+            left = _settle_bypass(device, back)
+            for w in left:
+                device.notice("info", f"遅延の較正のあと、バイパスを元に戻せませんでした: {w}")
+    return value
+
+
+def _calibrate_bursts(renderer, sr: int) -> float | None:
     t = np.arange(int(CAL_BURST_MS / 1000 * sr)) / sr
     burst = (10 ** (CAL_BURST_DBFS / 20) * np.sin(2 * np.pi * 1000 * t)).astype(np.float32)
     padded = np.concatenate([np.zeros(int(0.05 * sr), dtype=np.float32), burst,
@@ -269,7 +301,8 @@ def calibrate(renderer, sr: int = SR) -> float | None:
 LATENCY_MARGIN_S = 1.0
 
 
-def render(renderer, di, sr: int = SR, latency_ms: float | None = None) -> RenderResult:
+def render(renderer, di, sr: int = SR, latency_ms: float | None = None,
+           device=None) -> RenderResult:
     """Reamp ``di`` (mono or (n, ch)) and return audio aligned to it.
 
     The result is ``len(di) + TAIL_S`` long and starts at the DI's sample 0.
@@ -278,7 +311,7 @@ def render(renderer, di, sr: int = SR, latency_ms: float | None = None) -> Rende
     mono = di.mean(axis=1) if di.ndim == 2 else di
     padded = np.concatenate([mono, np.zeros(int(LATENCY_MARGIN_S * sr), dtype=np.float32)])
     if latency_ms is None and fixed_latency_ms() is None:
-        calibrate(renderer, sr)
+        calibrate(renderer, sr, device=device)
     rec = renderer.playrec(padded, sr)
     if rec.ndim == 1:
         rec = np.stack([rec, rec], axis=1)
