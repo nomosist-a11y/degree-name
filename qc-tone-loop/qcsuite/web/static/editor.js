@@ -789,7 +789,13 @@ function startGesture(cell, b, p) {
     try {
       await edFetch("/api/editor/move", { gesture: id, seq, [valueField(p)]: value }, { quiet: true });
     } catch (e) {
-      if (e.status === 409) abortGesture(g, e);
+      if (e.status === 409 && e.data && e.data.conflict) abortGesture(g, e);
+      else if (!g.moveErrorShown) {
+        // Job running, device busy, ...: the server still holds the gesture, so it must
+        // still get an /end (sent when the knob is let go).
+        g.moveErrorShown = true;
+        toast((e && e.message) || "書き込めませんでした", true);
+      }
     }
   }, 100);
   ED.gesture = g;
@@ -1168,7 +1174,13 @@ window.addEventListener("pagehide", () => {
   if (!g || !g.id || g.aborted || !navigator.sendBeacon) return;
   const body = { gesture: g.id, [valueField(g.p)]: g.final };
   navigator.sendBeacon("/api/editor/end", new Blob([JSON.stringify(body)], { type: "application/json" }));
+  // The gesture is closed now; a page restored from the back/forward cache must not end it twice.
+  if (g.idleTimer) { clearTimeout(g.idleTimer); g.idleTimer = null; }
+  g.aborted = true;
+  g.ending = Promise.resolve();
+  ED.gesture = null;
 });
+window.addEventListener("pageshow", e => { if (e.persisted) loadGrid(); });
 
 // common.js header: still fetched for QC.status (mode, version), but hidden by CSS.
 const headerReady = renderHeader("editor").then(st => {

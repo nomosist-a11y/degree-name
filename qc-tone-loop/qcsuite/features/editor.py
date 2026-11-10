@@ -173,7 +173,7 @@ def _knob(rp, snap, spec, raw, inert_block) -> dict:
         # show and write the normalized value.
         out.update(placeholder=True, value=snap["value"], min=0.0, max=1.0, skew=1.0,
                    steps=None, int=False, min_string=None, max_string=None, units="",
-                   default=rp.default if rp.default is not None and 0 <= rp.default <= 1 else None)
+                   default=None)    # the published default is in real units, not 0..1
         out["writable"] = spec is not None
     elif isinstance(raw, float) and rp.range_known:
         out["value"] = round(rp.minimum + min(1.0, max(0.0, raw)) * (rp.maximum - rp.minimum), 4)
@@ -490,6 +490,7 @@ class EditorSession:
         self._gestures: dict[str, SimpleNamespace] = {}
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
+        self._edit = threading.RLock()      # one edit at a time: before -> write -> record
         self.stale_seconds = stale_seconds
 
     def _wait_idle(self, device):
@@ -509,6 +510,10 @@ class EditorSession:
 
     def set(self, device, req: dict) -> dict:
         """A click, a switch, a drop-down, a double-click reset, a bypass toggle."""
+        with self._edit:
+            return self._set(device, req)
+
+    def _set(self, device, req: dict) -> dict:
         self._wait_idle(device)
         before = device.grid()
         block = _locate(before, req)
@@ -519,6 +524,10 @@ class EditorSession:
 
     def replace(self, device, req: dict) -> dict:
         """Put another model in a cell (set_block), confirmed by reading back."""
+        with self._edit:
+            return self._replace(device, req)
+
+    def _replace(self, device, req: dict) -> dict:
         self._wait_idle(device)
         new_id = req.get("new_model_id")
         if not isinstance(new_id, int):
@@ -565,6 +574,10 @@ class EditorSession:
     # -- gestures ----------------------------------------------------------------
 
     def begin(self, device, req: dict) -> dict:
+        with self._edit:
+            return self._begin(device, req)
+
+    def _begin(self, device, req: dict) -> dict:
         self._wait_idle(device)
         before = device.grid()
         block = _locate(before, req)

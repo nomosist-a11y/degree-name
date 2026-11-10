@@ -361,7 +361,7 @@ def _load_uncached(device, mock: bool, firmware: str) -> Repo | None:
     if path.exists():
         try:
             return parse(path.read_bytes(), source="cache", firmware=firmware)
-        except (ET.ParseError, ValueError, OSError) as exc:
+        except Exception as exc:                     # noqa: BLE001 - a bad cache is refetched
             log.warning("cached ModelRepo %s unreadable (%s); fetching again", path, exc)
     try:
         payload = device.model_repo_payload()
@@ -373,7 +373,7 @@ def _load_uncached(device, mock: bool, firmware: str) -> Repo | None:
     try:
         xml = extract_xml(payload)
         repo = parse(xml, source="device", firmware=firmware)
-    except (ET.ParseError, ValueError, tarfile.TarError, OSError) as exc:
+    except Exception as exc:                         # noqa: BLE001 - truncated gzip: EOFError, zlib
         log.warning("ModelRepo payload unreadable (%s)", exc)
         return None
     try:

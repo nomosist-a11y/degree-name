@@ -816,3 +816,52 @@ def test_routes_catalog_replace_and_end_conflict(client):
     r = client.post("/api/editor/replace", json={"row": 0, "col": 0, "model_id": 1001,
                                                  "new_model_id": 1038})
     assert r.status_code == 200 and r.json()["id"]
+
+
+# -- round 2 review fixes ---------------------------------------------------------------
+
+def test_concurrent_one_shot_edits_get_separate_befores(device):
+    original = device.apply_patch
+
+    def slow(patch):
+        import time as _t
+        _t.sleep(0.1)
+        return original(patch)
+    device.apply_patch = slow
+    s = editor.EditorSession()
+    threads = [threading.Thread(target=s.set, args=(device, {
+        "row": 0, "col": c, "model_id": m, "bypassed": True})) for c, m in ((0, 1038), (2, 4001))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(5)
+    device.apply_patch = original
+    panel.undo(device)                                   # only the later toggle comes back
+    blocks = {(b["row"], b["col"]): b["bypassed"] for b in device.grid()["blocks"]}
+    assert sorted([blocks[(0, 0)], blocks[(0, 2)]]) == [False, True]
+
+
+def test_truncated_model_repo_falls_back_and_is_not_refetched(device, fake, monkeypatch):
+    payload = fake._fetch_model_repo()
+    calls = []
+
+    def cut(timeout=25.0):
+        calls.append(1)
+        return payload[: len(payload) // 2]
+    monkeypatch.setattr(fake, "_fetch_model_repo", cut, raising=False)
+    assert modelrepo.load(device) is None
+    assert modelrepo.load(device) is None
+    assert editor.view(device)["repo"]["source"] == "none"
+    assert len(calls) == 1
+
+
+def test_corrupt_cache_is_refetched(device):
+    fw = device.version()["firmware"]
+    modelrepo.cache_path(True, fw).write_bytes(b"\x1f\x8bnot really gzip")
+    assert modelrepo.load(device).source == "device"
+
+
+def test_placeholder_knob_has_no_default_to_reset_to(device):
+    level = next(p for p in editor.view(device)["rows"][0]["cells"][0]["params"]
+                 if p["name"] == "LEVEL")
+    assert level["placeholder"] and level["default"] is None
