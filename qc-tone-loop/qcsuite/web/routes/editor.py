@@ -11,10 +11,10 @@ showed and nothing was written.
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from qcsuite.features import editor
+from qcsuite.features import editor, photos
 
 router = APIRouter(prefix="/api/editor")
 
@@ -103,3 +103,33 @@ async def replace(request: Request):
         return _conflict(exc)
     state.checkpoint()
     return result
+
+
+# --- photos of the real gear (display only; nothing here touches the unit) ---
+
+@router.get("/photo")
+async def photo(name: str, based_on: str = "", plugin: bool = False, fetch: bool = True):
+    """Origin and photo for one QC device. ``fetch=0`` answers from the cache
+    only (hover previews), so a sweep of the mouse never searches Commons."""
+    return await run_in_threadpool(photos.lookup, name, based_on, plugin, fetch)
+
+
+@router.get("/photo/file/{kind}/{filename}")
+def photo_file(kind: str, filename: str):
+    return FileResponse(photos.photo_file(kind, filename),
+                        headers={"Cache-Control": "private, max-age=3600"})
+
+
+@router.post("/photo")
+async def photo_upload(request: Request):
+    """Register the player's own picture: ``{"name": QC name, "data": data URL}``."""
+    try:
+        size = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        size = 0
+    if size > photos.MAX_UPLOAD * 4 // 3 + 4096:
+        raise photos.PhotoError("画像が大きすぎます(12 MB まで)。")
+    body = await _body(request)
+    path = await run_in_threadpool(photos.save_user_photo, str(body.get("name", "")),
+                                   body.get("data"))
+    return {"file": path.name, "url": photos.photo_url("user", path.name)}

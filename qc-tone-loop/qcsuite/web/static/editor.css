@@ -333,6 +333,86 @@ body.ed-app dialog button:not(.primary):not(.danger) { background: #2a2a2a; bord
   .tb-devname { display: none; }
 }
 
+/* ---------------------------------------------------------------- real-gear photos (editor_photos.js) */
+.ed-pp { display: flex; align-items: stretch; gap: 8px; }
+.ed-pp > .cc { flex: 1 1 auto; min-width: 0; }
+.ph { flex: 0 0 248px; background: #1b1b1b; border-radius: 8px 8px 0 0; color: #ddd; display: flex;
+  flex-direction: column; min-width: 0; overflow: hidden; position: relative; }
+.ph > summary { list-style: none; display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 12px;
+  border-bottom: 1px solid #000; cursor: pointer; font-size: 13px; color: #9a9a9a; }
+.ph > summary::-webkit-details-marker { display: none; }
+.ph-label { color: var(--c); font-weight: 600; letter-spacing: .06em; font-size: 11px; text-transform: uppercase; }
+.ph-sum-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-sum-thumb { display: none; }
+.ph[open] > summary .ph-sum-text { display: none; }
+.ph-body { flex: 1; display: flex; flex-direction: column; padding: 10px; gap: 8px; min-height: 0; overflow-y: auto;
+  scrollbar-color: #444 transparent; }
+@media (min-width: 900px) {
+  .ph-body > .ph-img { aspect-ratio: auto; height: 112px; flex: 0 0 auto; }
+  .ph-body { gap: 6px; }
+  .ph-actions { margin-top: 2px; gap: 5px; }
+  .ph-actions .ph-btn { height: 24px; padding: 0 9px; }
+}
+.ph-img { display: block; width: 100%; aspect-ratio: 4 / 3; background: #111; border: 0; border-radius: 6px; padding: 0;
+  overflow: hidden; cursor: zoom-in; }
+.ph-img img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.ph-img.none { display: flex; align-items: center; justify-content: center; text-align: center; cursor: default;
+  color: #6f6f6f; font-size: 12px; line-height: 1.5; padding: 10px;
+  background: repeating-linear-gradient(135deg, #151515 0 10px, #181818 10px 20px); }
+.ph-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ph-origin { font-size: 14px; color: #f0f0f0; line-height: 1.35; }
+.ph-src { font-size: 11px; color: #808080; line-height: 1.45; }
+.ph-credit { font-size: 10.5px; color: #8a8a8a; line-height: 1.45; overflow-wrap: anywhere; }
+.ph-credit a { color: #a9c4ff; }
+.ph-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.ph-links { display: contents; }
+.ph-btn { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 13px; font-size: 11.5px;
+  background: #2a2a2a; color: #e6e6e6; border: 1px solid #3a3a3a; text-decoration: none; cursor: pointer; }
+.ph-btn:hover { background: #333; color: #fff; }
+.ph-btn.ghost { background: transparent; }
+body.ed-app button.ph-btn { font-size: 11.5px; }
+.ph.drop { outline: 2px dashed var(--c); outline-offset: -4px; }
+.ph.drop::after { content: "ここに写真をドロップして登録"; position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; background: rgba(0,0,0,.7); color: #fff; font-size: 13px; }
+.ph-zoom { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.86); display: flex; align-items: center;
+  justify-content: center; padding: 24px; cursor: zoom-out; }
+.ph-zoom figure { margin: 0; max-width: min(960px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 10px; }
+.ph-zoom img { max-width: 100%; max-height: calc(100dvh - 120px); object-fit: contain; border-radius: 6px; background: #111; }
+.ph-zoom figcaption { color: #ddd; font-size: 13px; cursor: auto; }
+.ph-zoom figcaption b { display: block; font-weight: 500; margin-bottom: 2px; }
+/* sidebar preview: the device under the pointer, to compare before replacing */
+.sb-pv { flex: 0 0 auto; display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; align-items: start;
+  margin: 6px -2px 0; padding: 10px; background: #181818; border-radius: 8px; border-left: 3px solid var(--c, #444);
+  min-height: 92px; }
+.sb-pv .ph-img { aspect-ratio: 4 / 3; cursor: default; }
+.sb-pv .ph-img.none { font-size: 10.5px; padding: 6px; }
+.sb-pv-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 12px; color: #aaa; line-height: 1.4; }
+.sb-pv-text b { color: #f0f0f0; font-weight: 500; font-size: 13px; overflow-wrap: anywhere; }
+.sb-pv-text .ph-links { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.sb-pv-text .ph-btn { height: 22px; font-size: 11px; padding: 0 8px; }
+.sb-pv-empty { grid-column: 1 / -1; font-size: 11.5px; color: #6f6f6f; line-height: 1.5; align-self: center; }
+@media (max-width: 1180px) {
+  .ph { flex-basis: 210px; }
+}
+/* phones and tablets: the photo card folds into one line above the parameters */
+@media (max-width: 899px) {
+  .ed-pp { flex-direction: column; gap: 6px; }
+  .ph { flex: 0 0 auto; border-radius: 8px; }
+  .ph > summary { min-height: 42px; border-bottom: 0; }
+  .ph[open] > summary { border-bottom: 1px solid #000; }
+  .ph-sum-thumb { display: block; width: 44px; height: 30px; border-radius: 4px; overflow: hidden; background: #111; flex: 0 0 auto; }
+  .ph-sum-thumb:empty { display: none; }
+  .ph-sum-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ph[open] > summary .ph-sum-text, .ph[open] > summary .ph-sum-thumb { display: none; }
+  .ph > summary::after { content: "▾"; color: #777; }
+  .ph[open] > summary::after { content: "▴"; }
+  .ph[open] .ph-body { flex-direction: row; align-items: flex-start; }
+  .ph[open] .ph-img { flex: 0 0 46%; }
+}
+@media (max-width: 419px) {
+  .ph[open] .ph-body { flex-direction: column; }
+}
+
 /* phones and tablets: sidebar becomes a drawer, natural page scroll */
 @media (max-width: 899px) {
   .app { display: block; height: auto; }

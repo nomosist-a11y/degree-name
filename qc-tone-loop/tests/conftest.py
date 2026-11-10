@@ -18,6 +18,9 @@ def qchome(tmp_path, monkeypatch):
     monkeypatch.delenv("QCSUITE_READONLY", raising=False)
     monkeypatch.delenv("QCSUITE_LATENCY_MS", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    # Real-gear photos: never search Wikimedia Commons, never read the player's list.
+    monkeypatch.setenv("QCSUITE_PHOTOS_OFFLINE", "1")
+    monkeypatch.setenv("QCSUITE_DEVICE_LIST", str(tmp_path / "no-device-list.md"))
     return home
 
 

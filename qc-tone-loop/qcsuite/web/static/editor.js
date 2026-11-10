@@ -488,16 +488,22 @@ function deviceList(g) {
   const search = el("input", { class: "sb-search", type: "search", placeholder: "名前で絞り込む", value: ED.sbQuery,
     "aria-label": `${g.label} を名前で絞り込む` });
   const items = el("div", { class: "sb-items", role: "listbox", "aria-label": `${g.label} のデバイス` });
+  const pane = EdPhotos.previewPane();
+  EdPhotos.hookList(items, pane);
   const fill = () => {
     const q = ED.sbQuery.trim().toLowerCase();
     const list = g.models.filter(m => (!g.has_bass || !!m.bass === ED.sbBass) && (!q || m.name.toLowerCase().includes(q)));
-    items.replaceChildren(list.length ? list.map(m => deviceItem(m, b)) : el("div", { class: "sb-none" }, "該当なし"));
+    items.replaceChildren(list.length ? list.map(m => {
+      const item = deviceItem(m, b);
+      EdPhotos.hookItem(item, m, pane);
+      return item;
+    }) : el("div", { class: "sb-none" }, "該当なし"));
   };
   search.addEventListener("input", () => { ED.sbQuery = search.value; fill(); });
   fill();
   const hint = el("div", { class: "sb-hint" }, target ? `ダブルクリックで ${target} を差し替え(保存はしません)` :
     "グリッドでブロックか空きセルを選ぶと、ダブルクリックで置けます");
-  const list = el("div", { class: "sb-list", "data-c": g.color || "util" }, head, seg, search, items, hint);
+  const list = el("div", { class: "sb-list", "data-c": g.color || "util" }, head, seg, search, items, pane, hint);
   requestAnimationFrame(() => { const cur = items.querySelector(".sb-item.cur"); if (cur) cur.scrollIntoView({ block: "nearest" }); });
   return list;
 }
@@ -646,7 +652,7 @@ function renderParams() {
   const pad = (5 - (list.length % 5)) % 5;
   for (let k = 0; k < pad; k++) cells.push(el("div", { class: "cc-cell blank", "aria-hidden": "true" }));
 
-  host.replaceChildren(el("div", { class: `cc ${b.bypassed ? "byp" : ""}`, "data-c": b.color || "util" },
+  host.replaceChildren(EdPhotos.wrap(el("div", { class: `cc ${b.bypassed ? "byp" : ""}`, "data-c": b.color || "util" },
     el("div", { class: "cc-head" },
       dots,
       el("span", { class: "cc-title", title: b.based_on || "" },
@@ -655,7 +661,7 @@ function renderParams() {
       tabs, power),
     banners,
     params.length ? el("div", { class: "cc-grid" }, cells)
-      : el("div", { class: "cc-none" }, "表示できるパラメーターはありません。")));
+      : el("div", { class: "cc-none" }, "表示できるパラメーターはありません。")), b));
 }
 
 function paramCell(b, p) {

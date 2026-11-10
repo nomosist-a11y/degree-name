@@ -8,17 +8,19 @@
   attributes (displayPos, skew, stepNames, min_string, hidden, ...) are invented to
   exercise the editor the way the real file does. Models not listed fall back to the
   catalog order with no extras, as they would if the real fetch failed.
+  The tm ("Based on ...") strings are the origins Neural DSP publishes in its device
+  list, so the editor's real-gear photo panel can be tried on the mock.
 -->
 <Models>
   <Category id="0" name="Guitar Overdrive">
-    <Model id="2" name="Obsessive Drive" tm="Based on a famous US overdrive (mock)">
+    <Model id="2" name="Obsessive Drive" tm="Based on Fulltone® OCD®">
       <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float" units=""/>
       <Parameter defaultValue="5" max="10" min="0" name="TONE" type="float" units=""/>
       <Parameter defaultValue="5" max="10" min="0" name="LEVEL" type="float" units=""/>
     </Model>
   </Category>
   <Category id="1" name="Guitar Amplifier">
-    <Model id="1001" name="Brit 2203" tm="Based on a British 100 W head (mock)">
+    <Model id="1001" name="Brit 2203" tm="Based on Marshall® JCM800®">
       <Parameter defaultValue="5" displayPos="0" max="10" min="0" name="DRIVE" type="float" units=""/>
       <Parameter defaultValue="5" displayPos="1" max="10" min="0" name="BASS" type="float" units=""/>
       <Parameter defaultValue="5" displayPos="2" max="10" min="0" name="MID" type="float" units=""/>
@@ -28,7 +30,7 @@
       <Parameter defaultValue="3" displayPos="6" max="10" min="0" name="VOLUME" type="float" units=""/>
       <Parameter defaultValue="0.76923077" displayPos="7" max="1" min="0" name="LEVEL" type="float" units="dB"/>
     </Model>
-    <Model id="1038" name="Brit TM45 Normal" tm="Based on a British 45 W combo (mock)">
+    <Model id="1038" name="Brit TM45 Normal" tm="Based on Marshall® JTM 45® - Normal Channel">
       <Parameter defaultValue="5" displayPos="0" max="10" min="0" name="GAIN 1" type="float" units=""/>
       <Parameter defaultValue="5" displayPos="1" max="10" min="0" name="GAIN 2" type="float" units=""/>
       <Parameter defaultValue="5" displayPos="2" max="10" min="0" name="BASS" type="float" units=""/>
@@ -40,7 +42,7 @@
       <Parameter defaultValue="0" displayPos="8" max="1" min="0" name="CHANNEL" stepNames="CLEAN,DRIVE" steps="2" type="comboBox" units=""/>
       <Parameter defaultValue="0.76923077" displayPos="9" max="1" min="0" name="LEVEL" type="float" units="dB"/>
     </Model>
-    <Model id="40000" name="Plini Clean" plugin_id="Plini" sku="PLUGIN-PLINI" tm="Plini plugin (mock)">
+    <Model id="40000" name="Plini Clean" plugin_id="Plini" sku="PLUGIN-PLINI" tm="">
       <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float" units=""/>
       <Parameter defaultValue="5" max="10" min="0" name="BASS" type="float" units=""/>
       <Parameter defaultValue="5" max="10" min="0" name="MIDDLE" type="float" units=""/>
@@ -52,7 +54,7 @@
     </Model>
   </Category>
   <Category id="12" name="Cabsim Guitar (M)">
-    <Model id="12001" name="412 CA Stand OS S V30 90S M" tm="Based on a 4x12 cab (mock)">
+    <Model id="12001" name="412 CA Stand OS S V30 90S M" tm="Based on Mesa® Standard OS Straight with Celestion® Vintage 30 drivers">
       <Parameter defaultValue="NG_412_Dynamic 57" max="999" min="0" name="ir selector" steps="1000" type="string" units=""/>
       <Parameter defaultValue="NG_412_Condenser U47" max="999" min="0" name="ir selector 2" steps="1000" type="string" units=""/>
       <Parameter defaultValue="3.0" displayPos="1" max="12" min="1" name="DISTANCE" type="float" units="in"/>
@@ -60,7 +62,7 @@
       <Parameter defaultValue="9000" displayPos="3" max="20000" max_string="OFF" min="2000" name="HIGH CUT" showAsInteger="true" skew="0.3" type="float" units="Hz"/>
       <Parameter defaultValue="0.0" displayPos="0" max="12" min="-12" name="LEVEL" type="float" units="dB"/>
     </Model>
-    <Model id="12006" name="412 Brit 60B GB 71 M" tm="Based on a British 4x12 cab (mock)">
+    <Model id="12006" name="412 Brit 60B GB 71 M" tm="Based on Marshall® 1960B® with Celestion® Pulsonic Greenback drivers">
       <Parameter defaultValue="ML_412 Brit 60B GB 71_Dynamic 57" max="999" min="0" name="ir selector" steps="1000" type="string" units=""/>
       <Parameter defaultValue="ML_412 Brit 60B GB 71_Ribbon 160" max="999" min="0" name="ir selector 2" steps="1000" type="string" units=""/>
       <Parameter defaultValue="3.0" displayPos="1" max="12" min="1" name="DISTANCE" type="float" units="in"/>
@@ -82,7 +84,7 @@
     </Model>
   </Category>
   <Category id="5" name="Compressor">
-    <Model id="5001" name="Legendary 87 M" tm="Based on a classic FET limiter (mock)">
+    <Model id="5001" name="Legendary 87 M" tm="Based on Universal Audio® 1176®">
       <Parameter defaultValue="-20" max="12" min="-60" name="THRESHOLD" skew="LIN_SKEW" steps="721" type="float" units="dB"/>
       <Parameter defaultValue="4" max="20" min="1" name="RATIO" skew="0.5" type="float" units=""/>
       <Parameter defaultValue="10" max="100" min="0.1" name="ATTACK" skew="0.6" steps="300" type="float" units="ms"/>
@@ -92,7 +94,7 @@
     </Model>
   </Category>
   <Category id="6" name="Delay">
-    <Model id="6001" name="Analog Delay M" tm="Based on a bucket-brigade delay (mock)">
+    <Model id="6001" name="Analog Delay M" tm="">
       <Parameter defaultValue="350" max="2000" min="1" name="TIME" skew="0.5" type="float" units="ms"/>
       <Parameter defaultValue="30" max="100" min="0" name="FEEDBACK" type="float" units="%"/>
       <Parameter defaultValue="25" max="100" min="0" name="MIX" type="float" units="%"/>
@@ -100,7 +102,7 @@
     </Model>
   </Category>
   <Category id="7" name="Modulation">
-    <Model id="7000" name="Vintage Chorus" tm="Based on a classic chorus pedal (mock)">
+    <Model id="7000" name="Vintage Chorus" tm="">
       <Parameter defaultValue="1.0" max="10" min="0.1" name="RATE" skew="0.5" type="float" units="Hz"/>
       <Parameter defaultValue="50" max="100" min="0" name="DEPTH" type="float" units="%"/>
       <Parameter defaultValue="50" max="100" min="0" name="MIX" type="float" units="%"/>
