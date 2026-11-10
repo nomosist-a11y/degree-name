@@ -278,6 +278,13 @@ def load_repo(device):
     return modelrepo.load(device)
 
 
+def _feeds(out_port: str, row: int) -> bool:
+    """Whether a row output (NEXT_ROW_3, NEXT_ROW_4, NEXT_ROW_3_4) feeds ``row`` (0-based)."""
+    if not out_port.startswith("NEXT_ROW_"):
+        return False
+    return str(row + 1) in out_port[len("NEXT_ROW_"):].split("_")
+
+
 def view(device, repo="load") -> dict:
     """The editor's whole view. Reads the live preset once; no side effects."""
     if repo == "load":
@@ -291,8 +298,11 @@ def view(device, repo="load") -> dict:
         for col in range(qdevice.COLUMNS):
             b = cells.get((r["row"], col))
             line.append(None if b is None else block_view(b, catalog, repo, preset))
-        rows.append({"row": r["row"], "in_port": r["in_port"], "out_port": r["out_port"],
-                     "is_input": r["in_port"] not in ("EMPTY",),
+        in_port = r["in_port"]
+        if in_port == "EMPTY" and any(_feeds(o["out_port"], r["row"]) for o in grid["rows"]):
+            in_port = "PREV_ROW"        # the unit shows "Prev. row" for a row fed by another
+        rows.append({"row": r["row"], "in_port": in_port, "out_port": r["out_port"],
+                     "is_input": in_port not in ("EMPTY",),
                      "reaches_output": r["out_port"] in panel.REACHES_OUT, "cells": line})
     labels = list(getattr(preset, "scene_labels", []) or [])
     return {"scene": grid.get("active_scene"), "rows": rows, "repo": repo_info(repo),

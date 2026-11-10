@@ -901,3 +901,11 @@ def test_skewed_knob_writes_the_skewed_wire_value_and_reads_back(device, fake):
     (call,) = [c for c in fake.calls[since:] if c[0] == "set_param"]
     assert call[2]["value"] == pytest.approx((180 / 480) ** 0.3, abs=1e-6)
     s.end(device, g["gesture"], {"real": 200.0})
+
+
+def test_row_fed_by_another_row_shows_prev_row(device):
+    device.apply_patch({"ops": [{"op": "set_output", "row": 0, "port": "NEXT_ROW_3"},
+                                {"op": "set_block", "row": 2, "col": 0, "model": 2}]})
+    rows = editor.view(device)["rows"]
+    assert rows[2]["in_port"] == "PREV_ROW" and rows[3]["in_port"] == "EMPTY"
+    assert editor._feeds("NEXT_ROW_3_4", 3) and not editor._feeds("XLR_1_2", 2)

@@ -238,6 +238,10 @@ async function loadGrid() {
   ED.loading = (async () => {
     try {
       ED.view = await edFetch("/api/editor/grid", undefined, { method: "GET" });
+      if (QC.status && QC.status.mode !== "mock" && !QC.status.connected) {
+        // The first grid read connected the unit: show it in the badge.
+        api("/api/status").then(st => { QC.status = st; showModeBadge(st); }).catch(() => {});
+      }
     } catch (e) {
       return;
     } finally {
@@ -1183,12 +1187,16 @@ window.addEventListener("pagehide", () => {
 window.addEventListener("pageshow", e => { if (e.persisted) loadGrid(); });
 
 // common.js header: still fetched for QC.status (mode, version), but hidden by CSS.
-const headerReady = renderHeader("editor").then(st => {
+function showModeBadge(st) {
   const badge = document.getElementById("edMode");
   if (st) {
     if (st.mode === "mock") { badge.textContent = "モック(実機なし)"; badge.className = "tb-badge mock"; }
     else { badge.textContent = st.connected ? "実機に接続中" : "実機(未接続)"; badge.className = "tb-badge hw"; }
   } else badge.textContent = "状態不明";
+}
+
+const headerReady = renderHeader("editor").then(st => {
+  showModeBadge(st);
   renderStatus();
   return st;
 });
