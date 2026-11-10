@@ -50,6 +50,9 @@ def _sd():
         import sounddevice
     except ImportError as exc:  # pragma: no cover - depends on the host
         raise SystemExit("sounddevice is missing: pip install -e '.[device]'") from exc
+    except OSError as exc:  # pragma: no cover - PortAudio missing (e.g. CI, Linux)
+        raise SystemExit(f"sounddevice cannot load PortAudio: {exc}. On a Mac this "
+                         "comes with the sounddevice wheel; elsewhere install PortAudio.") from exc
     return sounddevice
 
 

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qcsuite ジョブ</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h2>ジョブ</h2>
+  <p class="small muted">時間のかかる処理(スイープ、一括リアンプ、バックアップ、計画の実行)は、ジョブとして記録されます。
+    中断しても、CLI の <code>--resume ジョブID</code> で続きから再開できます。</p>
+  <div id="jobbox"></div>
+  <section class="panel"><div id="list">読み込み中…</div></section>
+  <section class="panel"><h3>詳細</h3><pre id="detail" class="small">ジョブを選んでください。</pre></section>
+</main>
+<script src="/static/common.js"></script>
+<script>
+async function load() {
+  const rows = await api("/api/jobs");
+  document.getElementById("list").replaceChildren(rows.length ? table(rows, [
+    ["id", "ID"], ["title", "内容"], ["status", "状態"], ["done", "完了"], ["total", "全体"],
+    ["failed", "失敗"], ["updated", "更新"],
+  ], { onRow: async r => {
+    const d = await api(`/api/jobs/${r.id}`);
+    document.getElementById("detail").textContent = JSON.stringify(d, null, 1);
+  } }) : el("p", { class: "muted" }, "(ジョブはまだありません)"));
+}
+renderHeader("jobs").then(load);
+</script>
+</body>
+</html>

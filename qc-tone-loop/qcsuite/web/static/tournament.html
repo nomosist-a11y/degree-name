@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qcsuite ブラインド比較</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .ab { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .ab .side { border: 2px solid var(--line); border-radius: 8px; padding: 14px; text-align: center; }
+  .ab .side.playing { border-color: var(--accent); }
+  .ab .side h3 { font-size: 28px; margin: 4px 0 10px; }
+  .vote button { min-width: 120px; padding: 10px 14px; font-size: 16px; }
+  kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 12px; }
+  @media (max-width: 640px) { .ab { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h2>ブラインド比較</h2>
+  <div class="warn small">
+    名前を伏せ、音量(LUFS)をそろえて 2 つずつ聴き比べます。選ぶのはあなたです。順位はあなたの投票の集計で、機械の評価ではありません。
+    素通しの疑いがある音や、パソコンからは鳴らないブロックを含むプリセットは、比較から除外します。
+  </div>
+  <div id="jobbox"></div>
+
+  <section class="panel" id="listening" hidden>
+    <h3 id="ttitle"></h3>
+    <div class="small muted" id="tprogress"></div>
+    <div class="ab">
+      <div class="side" id="sideA"><h3>A</h3><button id="playA">A を聴く</button></div>
+      <div class="side" id="sideB"><h3>B</h3><button id="playB">B を聴く</button></div>
+    </div>
+    <div class="row">
+      <button id="playPause">再生 / 一時停止</button>
+      <span class="small muted">切り替えても同じ位置から続きます。
+        <kbd>A</kbd>/<kbd>B</kbd> 切り替え、<kbd>Space</kbd> 再生、<kbd>1</kbd>/<kbd>2</kbd>/<kbd>0</kbd> 投票</span>
+    </div>
+    <div class="row vote">
+      <button class="primary" id="voteA">A が好き (1)</button>
+      <button id="voteTie">同じくらい (0)</button>
+      <button class="primary" id="voteB">B が好き (2)</button>
+    </div>
+    <div id="doneBox"></div>
+    <audio id="audioA" preload="auto"></audio>
+    <audio id="audioB" preload="auto"></audio>
+  </section>
+
+  <section class="panel" id="standingsBox" hidden>
+    <h3>集計</h3>
+    <div id="standings"></div>
+    <div class="row">
+      <button class="danger" id="btnReveal">名前を表示する</button>
+      <a id="exportLink" class="btn" href="#" target="_blank">結果を書き出す(Markdown)</a>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>新しい比較(プリセットから)</h3>
+    <div class="row"><label>フォルダ <select id="folder"></select></label></div>
+    <div id="presetList" class="small" style="max-height:240px;overflow:auto"></div>
+    <div class="small muted" id="selCount"></div>
+    <div class="row">
+      <label>DI <select id="di"></select></label>
+      <label>形式 <select id="format"><option value="swiss">スイス式(既定)</option><option value="knockout">勝ち抜き</option></select></label>
+      <label>回戦数 <input id="rounds" type="number" min="1" placeholder="自動" style="width:5em"></label>
+      <label>同じ音どうしの確認 <input id="checks" type="number" min="0" value="0" style="width:4em"> 回</label>
+    </div>
+    <div class="row">
+      <input id="title" placeholder="タイトル(省略可)">
+      <button class="primary" id="btnCreate">鳴らして比較を始める</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>これまでの比較</h3>
+    <div id="list"></div>
+  </section>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/tournament.js"></script>
+</body>
+</html>

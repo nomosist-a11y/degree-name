@@ -1,0 +1,33 @@
+name: qc-tone-loop
+
+on:
+  push:
+    paths: ["qc-tone-loop/**", ".github/workflows/qc-tone-loop.yml"]
+  pull_request:
+    paths: ["qc-tone-loop/**", ".github/workflows/qc-tone-loop.yml"]
+
+jobs:
+  test:
+    # Everything here runs against the fake Quad Cortex: no hardware, no audio
+    # device. PortAudio is absent on purpose - sounddevice must import lazily.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    defaults:
+      run:
+        working-directory: qc-tone-loop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[device,dev,claude]'
+      - name: Tests (mock only)
+        run: python -m pytest -q
+      - name: Self-test against the fake unit
+        run: qcsuite --mock selftest

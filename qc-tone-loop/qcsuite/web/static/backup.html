@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qcsuite バックアップ</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h2>バックアップと変更履歴</h2>
+  <p class="small muted">プリセットを JSON に書き出し、qcsuite 専用の git リポジトリで履歴を残します。
+    復元は sandbox(または許可したフォルダ)にだけ行い、元のプリセットには書き込みません。</p>
+  <div id="jobbox"></div>
+
+  <section class="panel">
+    <h3>状態</h3>
+    <div id="status" class="small muted">読み込み中…</div>
+  </section>
+
+  <section class="panel">
+    <h3>バックアップを実行</h3>
+    <div class="warn small" id="recallWarn"></div>
+    <div id="folders" class="row small"></div>
+    <div class="row">
+      <label><input type="checkbox" id="factory"> Factory Library も含める(256 件)</label>
+      <button class="primary" id="btnRun">バックアップを始める</button>
+      <button id="btnResume" hidden>中断したバックアップを再開</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>履歴</h3>
+    <div id="log" class="small muted">(まだありません)</div>
+    <div class="row">
+      <button id="btnDiffLast">直近の 2 回を比べる</button>
+      <button id="btnDiffSel">選んだ 2 つを比べる</button>
+    </div>
+    <pre id="diff" class="small">差分はここに表示します。</pre>
+  </section>
+
+  <section class="panel">
+    <h3>最新のバックアップの中身</h3>
+    <div class="row"><input id="filter" placeholder="名前で絞り込み"></div>
+    <div id="presets" class="small muted">(まだありません)</div>
+  </section>
+
+  <section class="panel" id="detailPanel">
+    <h3>選んだプリセット</h3>
+    <div id="detail" class="small muted">上の一覧から選んでください。</div>
+    <div class="row">
+      復元先 <select id="dest"></select>
+      <input id="slot" placeholder="スロット(例: 3A、空欄で最初の空き)" style="width:16em">
+      <input id="name" placeholder="名前(空欄で元の名前)">
+      <button id="btnRestore" disabled>復元の計画を作る</button>
+    </div>
+    <p class="small muted">復元は JSON からグリッドを組み立てて保存します。キャプチャー・キャビのマイク・IR は
+      読み戻せても音に反映されず、未所有プラグインは素通し、タグは消えます(計画に注意として表示します)。</p>
+  </section>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/backup.js"></script>
+</body>
+</html>

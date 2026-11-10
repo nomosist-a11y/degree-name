@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qcsuite プリセット管理</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h2>プリセット管理</h2>
+  <p class="small muted">一覧・検索・重複の確認は、本体のフォルダ一覧だけを使うので本体の音は変わりません。
+    中身(チェーンとノブ)はバックアップから表示します。コピーは計画を確認してから実行します(既定のコピー先は sandbox)。</p>
+  <div id="jobbox"></div>
+
+  <section class="panel">
+    <h3>一覧と検索</h3>
+    <div class="row">
+      <input id="q" placeholder="名前で検索">
+      <select id="folder"><option value="">すべてのフォルダ</option></select>
+      <select id="sort">
+        <option value="folder">フォルダ順</option><option value="slot">スロット順</option>
+        <option value="name">名前順</option>
+      </select>
+      <label><input type="checkbox" id="factory"> Factory Library も含める</label>
+      <button class="primary" id="btnSearch">表示</button>
+    </div>
+    <div id="list" class="small muted">「表示」を押してください。</div>
+    <div class="row">
+      <span id="selCount" class="small muted">0 件を選択</span>
+      コピー先 <select id="dest"></select>
+      <input id="rename" placeholder="新しい名前(1 件のときだけ)">
+      <button id="btnCopy">コピーの計画を作る</button>
+    </div>
+    <p class="small muted">コピーのたびに元のプリセットが本体に読み込まれ、音が切り替わります。タグは引き継がれません。
+      同じ名前があると、本体が名前を 20 文字に切り詰めて _N を付けることがあります。</p>
+  </section>
+
+  <section class="panel" id="detailPanel">
+    <h3>中身(チェーンとノブ)</h3>
+    <div id="detail" class="small muted">一覧の名前を押すと、バックアップから表示します。</div>
+    <div class="row">
+      <button id="btnLoad" disabled>本体に読み込んで表示(音が切り替わります)</button>
+      <button id="btnCurrent">現在のグリッドを表示</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>重複</h3>
+    <div class="row">
+      <button id="btnDupes">調べる</button>
+      <button id="btnDupesMd" disabled>整理案を Markdown で保存</button>
+    </div>
+    <div id="dupes" class="small"></div>
+  </section>
+
+  <section class="panel">
+    <h3>お気に入り(ハート)と Favorite フォルダの比較</h3>
+    <p class="small muted">本体のお気に入り機能と、ユーザーが作った「Favorite」フォルダは別物です。名前で照合して並べます。
+      qcsuite はハートを付け外ししません(読むだけ)。</p>
+    <div class="row">
+      <button id="btnFav">比べる</button>
+      <button id="btnFavMd" disabled>Markdown で保存</button>
+    </div>
+    <div id="fav" class="small"></div>
+  </section>
+
+  <section class="panel">
+    <h3>キャプチャー・IR・ブロックを探す</h3>
+    <p class="small muted">パソコンから読み込んだキャプチャーや IR は音に反映されません。選んだものを
+      「本体で読み込む候補リスト」として保存し、本体の画面で読み込んでください。</p>
+    <div class="row">
+      <select id="kind">
+        <option value="captures">キャプチャー</option><option value="irs">IR</option>
+        <option value="catalog">ブロック(モデル)</option>
+      </select>
+      <input id="q2" placeholder="名前で検索(例: Corn Vixen)">
+      <button id="btnFind">探す</button>
+      <button id="btnCandMd">候補リスト(Markdown)</button>
+      <button id="btnCandCsv">候補リスト(CSV)</button>
+    </div>
+    <div id="found" class="small"></div>
+  </section>
+
+  <section class="panel">
+    <h3>フォルダの使用状況</h3>
+    <div id="usage" class="small muted">接続すると表示します。</div>
+  </section>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/library.js"></script>
+</body>
+</html>

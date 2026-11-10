@@ -147,8 +147,8 @@ def cmd_restore(a):
 
 def cmd_save(a):
     with device.connect() as qc:
-        stored = device.save(qc, a.slot, a.title)
-    print(f"saved to User {a.slot} as {stored!r}")
+        stored = device.save(qc, a.slot, a.title, a.folder)
+    print(f"saved to {a.folder or '_qcsuite_sandbox'} {a.slot} as {stored!r}")
 
 
 def cmd_status(a):
@@ -241,10 +241,12 @@ def main(argv=None):
     c.add_argument("--iter", type=int, help="iteration number; omit for the baseline")
     c.set_defaults(fn=cmd_restore)
 
-    c = sub.add_parser("save", help="save the live grid to a User slot (overwrites)")
+    c = sub.add_parser("save", help="save the live grid into an empty slot of the sandbox")
     c.add_argument("name")
-    c.add_argument("--slot", required=True, help='slot as shown on the unit, e.g. "30A"')
+    c.add_argument("--slot", required=True, help='an EMPTY slot as shown on the unit, e.g. "30A"')
     c.add_argument("--title", required=True)
+    c.add_argument("--folder", help="Live / Artist / Song / Workshop instead of the sandbox "
+                                    "(the player's own folders are refused)")
     c.set_defaults(fn=cmd_save)
 
     c = sub.add_parser("status", help="target and history of a session")
@@ -258,10 +260,13 @@ def main(argv=None):
     c.set_defaults(fn=cmd_analyze)
 
     a = p.parse_args(argv)
+    from qcsuite.errors import QcsuiteError
     try:
         a.fn(a)
     except device.PatchError as exc:
         raise SystemExit(f"patch rejected, nothing was sent: {exc}") from None
+    except QcsuiteError as exc:
+        raise SystemExit(f"refused: {exc}") from None
 
 
 if __name__ == "__main__":

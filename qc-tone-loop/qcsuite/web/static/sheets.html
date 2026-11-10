@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qcsuite 資料</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h2>資料と共有パック</h2>
+  <p class="small muted">チェーン図、ノブの値、シーン早見表をまとめた資料(印刷できる HTML / PDF)と、
+    バンドの仲間に渡す共有パック(zip)を作ります。バックアップから作れば本体の音は変わりません。</p>
+  <div id="jobbox"></div>
+  <section class="panel">
+    <h3>対象</h3>
+    <div class="row">
+      <label><input type="radio" name="src" value="backup" checked> バックアップから選ぶ(本体は読み込まない)</label>
+      <label><input type="radio" name="src" value="refs"> フォルダ:スロットで指定</label>
+      <label><input type="radio" name="src" value="folder"> フォルダ全体</label>
+      <label><input type="radio" name="src" value="current"> 本体の現在のグリッド</label>
+    </div>
+    <div id="pickBackup"><div id="backupList" class="small muted">読み込み中…</div></div>
+    <div id="pickRefs" hidden>
+      <input id="refs" placeholder="例: kami:1E, My Presets:2A" style="width: 100%">
+      <p class="small muted">バックアップに無いものは本体に読み込むので、音が切り替わります。</p>
+    </div>
+    <div id="pickFolder" hidden><select id="folder"></select>
+      <p class="small muted">バックアップに無いものは本体に 1 つずつ読み込みます(音が切り替わります)。</p></div>
+    <div class="row"><input id="title" placeholder="資料のタイトル(省略可)" style="min-width: 16em"></div>
+  </section>
+  <section class="panel">
+    <h3>作る</h3>
+    <div class="row">
+      <button class="primary" id="btnHtml">HTML 資料を開く</button>
+      <button id="btnPdf">PDF を作る</button>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="packPdf"> PDF も入れる</label>
+      <label><input type="checkbox" id="packRender"> 今リアンプして音も入れる</label>
+      <select id="di"></select>
+      <button id="btnPack">共有パック(zip)を作る</button>
+    </div>
+    <p class="small muted">共有パックは本体に直接は読み込めません。中の README に、手で作り直す方法と、
+      キャプチャー・マイク・IR は本体で読み込む必要があることを書いています。</p>
+    <div id="result"></div>
+  </section>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/sheets.js"></script>
+</body>
+</html>

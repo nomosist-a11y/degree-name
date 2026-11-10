@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qcsuite 言葉で操作</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .cell .name { font-weight: 600; }
+  .cell .kn { color: var(--muted); font-size: 11px; line-height: 1.35; }
+  .cell.flagged { border-color: var(--danger); }
+  .cell.off { opacity: .55; }
+  .rowhead { font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  .ab button { min-width: 7em; font-size: 16px; padding: 10px 14px; }
+  .ab button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  #summary li.problem { color: var(--danger); }
+  #summary li.warn { color: var(--warn-ink); }
+</style>
+</head>
+<body>
+<main>
+  <h2>言葉で操作</h2>
+  <div class="warn small">
+    言葉をグリッドの操作に置き換えるだけで、音の良し悪しは判断しません。変更は保存されず、本体でプリセットを呼び出し直すと元に戻ります。
+    キャプチャーと未所有プラグインのつまみ、マイクなどの文字列パラメーターは、パソコンから書いても音に反映されません(赤枠)。
+  </div>
+
+  <section class="panel">
+    <h3>指示</h3>
+    <textarea id="instruction" placeholder="例: 少し暗く / ゲインを 6 に / ブースト追加 / リバーブを外して / 低音を減らして、中域を出して"></textarea>
+    <div class="row">
+      <label>変換 <select id="engine"><option value="rules">ルール</option><option value="claude">Claude</option></select></label>
+      <span id="engineNote" class="small muted"></span>
+    </div>
+    <div class="row">
+      <button class="primary" id="btnPreview">プレビュー(まだ送らない)</button>
+      <button id="btnApply" disabled>本体に送る</button>
+    </div>
+    <ul id="summary" class="small"></ul>
+    <details><summary class="small muted">パッチ JSON</summary><pre id="patch" class="small"></pre></details>
+  </section>
+
+  <section class="panel ab">
+    <h3>A/B 切り替え</h3>
+    <p class="small muted">2 つの状態を記録して、1 クリックで行き来します。弾きながら耳で比べてください。保存はしません。</p>
+    <div class="row">
+      <button id="abA">A を聴く</button>
+      <button id="abB">B を聴く</button>
+    </div>
+    <div class="row small">
+      <button id="capA">いまの状態を A に記録</button>
+      <button id="capB">いまの状態を B に記録</button>
+      <button id="abLast">直前の変更の前後を A/B に</button>
+    </div>
+    <div id="abInfo" class="small"></div>
+  </section>
+
+  <section class="panel">
+    <h3>グリッド <span id="scene" class="badge"></span></h3>
+    <div class="row"><button id="btnRefresh">読み直す</button><span class="small muted">読み取りのみ(音は変わりません)</span></div>
+    <div id="grid"></div>
+  </section>
+
+  <section class="panel">
+    <h3>履歴</h3>
+    <div class="row"><button id="btnUndo">取り消す</button><button id="btnRedo">やり直す</button></div>
+    <p class="small muted">取り消しで戻るのは、ブロックの構成・入出力・数値のつまみ・スイッチ・バイパスです。文字列パラメーターは戻しません。</p>
+    <div id="history"></div>
+  </section>
+
+  <section class="panel">
+    <h3>sandbox に保存</h3>
+    <p class="small muted">いまのグリッドを sandbox の空きスロットに保存する計画を作ります。内容を確認してから実行します。</p>
+    <div class="row"><input id="saveName" placeholder="保存する名前"><button id="btnSave">計画を見る</button></div>
+  </section>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/panel.js"></script>
+</body>
+</html>

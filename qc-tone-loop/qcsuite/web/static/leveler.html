@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qcsuite 音量そろえ</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h2>音量そろえ</h2>
+  <div class="warn small">
+    同じ DI を各プリセットに通して音量(LUFS)を測り、目標との差を出力レベルで補正する案を出します。
+    測るときは本体のプリセットが順に読み込まれ、音が切り替わります(本体で保存していない編集は消えます)。
+    補正は sandbox などのコピーにだけ書き込み、元のプリセットは変更しません。補正後の音は、必ず耳で確かめてください。
+  </div>
+  <div id="jobbox"></div>
+
+  <section class="panel">
+    <h3>0. 出力レベルが効くか確かめる</h3>
+    <p class="small muted">パソコンから書いた行の出力レベル(VOLUME)が、本当に音量を変えるかはまだ実機で確かめていません。
+      −6 dB 書き込んで鳴らし比べ、元の値に戻します(保存はしません)。効かない場合は「Gain ブロックを追加」を使ってください。</p>
+    <div class="row">
+      <select id="ckFolder"></select>
+      <select id="ckPreset"><option value="">今のグリッドのまま</option></select>
+      <button id="btnCheck">確かめる</button>
+    </div>
+    <div id="checkResult" class="small"></div>
+  </section>
+
+  <section class="panel">
+    <h3>1. 測る</h3>
+    <div class="row">
+      <label>フォルダ <select id="folder"></select></label>
+      <label><input type="checkbox" id="wholeFolder"> フォルダ全体</label>
+    </div>
+    <div id="presetList" class="small" style="max-height:260px;overflow:auto"></div>
+    <div class="row">
+      <label>DI <select id="di"></select></label>
+      <label>シーン <select id="scenes">
+        <option value="">測らない</option>
+        <option value="labelled">名前のあるシーン</option>
+        <option value="all">すべて(A〜H)</option>
+      </select></label>
+      <button class="primary" id="btnMeasure">測定する</button>
+    </div>
+    <div class="small muted" id="selCount"></div>
+  </section>
+
+  <section class="panel">
+    <h3>2. 補正案</h3>
+    <div class="row">
+      <label>測定 <select id="measureJob"></select></label>
+      <label>目標 LUFS <input id="target" type="number" step="0.5" placeholder="中央値" style="width:7em"></label>
+      <label>方法 <select id="method">
+        <option value="lane">行の出力レベル(既定)</option>
+        <option value="gain_block">Gain ブロックを追加</option>
+        <option value="amp_level">アンプの MASTER / VOLUME(音色も変わる)</option>
+      </select></label>
+      <button id="btnPropose">補正案を出す</button>
+    </div>
+    <div id="measureTable"></div>
+    <div id="proposal"></div>
+  </section>
+
+  <section class="panel">
+    <h3>3. コピーに適用</h3>
+    <div class="row">
+      <label>コピー先 <select id="dest"><option value="">sandbox(_qcsuite_sandbox)</option></select></label>
+      <button class="primary" id="btnPlan">計画を作る</button>
+    </div>
+    <p class="small muted">Live / Artist / Song / Workshop はホームで書き込みを許可したときだけ選べます。</p>
+  </section>
+
+  <section class="panel">
+    <h3>4. 確認(コピーをもう一度測る)</h3>
+    <div class="row">
+      <label>適用の記録 <select id="session"></select></label>
+      <button id="btnVerify">確認する</button>
+    </div>
+    <div id="verify"></div>
+  </section>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/leveler.js"></script>
+</body>
+</html>

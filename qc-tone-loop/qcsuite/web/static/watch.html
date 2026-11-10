@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qcsuite 編集ウォッチャー</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h2>編集ウォッチャー</h2>
+  <div class="warn small">
+    本体で耳を頼りにノブを回してください。qcsuite は数秒ごとに現在のグリッドを<strong>読み取るだけ</strong>で、
+    何が変わったかを記録します(本体には何も書き込みません。プリセットの呼び出しもしません)。
+    マイク・IR・キャプチャーの変更は記録できますが、パソコンからは再現できない可能性があります。
+  </div>
+  <div id="jobbox"></div>
+  <section class="panel">
+    <h3>記録</h3>
+    <div class="row">
+      <label>読み取り間隔 <input id="interval" type="number" value="2" min="0.5" step="0.5" style="width:5em"> 秒</label>
+      <button class="primary" id="btnStart">記録を始める</button>
+      <button id="btnStop">記録を終える</button>
+    </div>
+    <div id="status" class="small muted">記録していません。</div>
+    <div class="row">
+      <input id="noteText" placeholder="メモ(例: このクランチが良い)" style="flex:1; min-width: 200px">
+      <button id="btnNote">メモを残す</button>
+    </div>
+    <h3>変更の記録</h3>
+    <div id="entries" class="small muted">(まだありません)</div>
+  </section>
+  <section class="panel">
+    <h3>録音(DI とウェットを同時に)</h3>
+    <p class="small muted">USB 1(Input 1 の素の音)と USB 3/4(Out 1/2)を 1 本のストリームで録ります。
+      本体の音はいつもどおり出ます。行の入力が INPUT_1 である必要があります(リアンプの後は USB 5 のままのことがあります)。
+      DI は DI ライブラリに入り、いまのプリセットとノブの値が録音に紐づきます。</p>
+    <div class="row">
+      <input id="takeName" placeholder="録音の名前">
+      <input id="takeSec" type="number" value="20" min="2" max="300" style="width:6em"> 秒
+      <input id="takeNote" placeholder="メモ(省略可)">
+      <button class="primary" id="btnTake">録音する</button>
+    </div>
+    <div id="takes"></div>
+  </section>
+  <section class="panel">
+    <h3>これまでの記録</h3>
+    <div id="sessions">読み込み中…</div>
+    <div id="detail"></div>
+  </section>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/watch.js"></script>
+</body>
+</html>

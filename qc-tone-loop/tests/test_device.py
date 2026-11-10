@@ -58,7 +58,7 @@ class FakeQC:
 
 def test_snapshot_reports_blocks_in_real_units():
     grid = device.snapshot(FakeQC())
-    assert grid["rows"][0] == {"row": 0, "in_port": "INPUT_1", "out_port": "XLR_1_2"}
+    assert grid["rows"][0] == {"row": 0, "in_port": "INPUT_1", "out_port": "XLR_1_2", "split": None}
     (amp,) = grid["blocks"]
     assert (amp["row"], amp["col"], amp["model"], amp["bypassed"]) == (0, 2, "Brit 2203", False)
     gain = amp["params"][0]

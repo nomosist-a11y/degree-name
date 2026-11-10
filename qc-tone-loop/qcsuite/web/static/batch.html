@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qcsuite 一括リアンプ</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h2>一括リアンプ(Logic 用ステム)と音の地図</h2>
+  <div class="warn small">
+    選んだ DI × プリセットを順にリアンプして、Logic Pro に並べやすいステム(48 kHz / 24 bit / ステレオ、
+    すべて DI の 0 サンプル目にそろえて同じ長さ)を書き出します。往復遅延(約 312 ms)は 1 本ごとに測って取り除きます。
+    プリセットを 1 つずつ本体に読み込むので、実行中は音が切り替わり、本体で保存していない編集は消えます。
+  </div>
+  <div id="jobbox"></div>
+
+  <section class="panel">
+    <h3>DI</h3>
+    <div id="dis" class="row"></div>
+  </section>
+
+  <section class="panel">
+    <h3>プリセット</h3>
+    <div class="row">
+      <select id="folderSel"></select>
+      <label><input type="checkbox" id="wholeFolder"> フォルダ全体</label>
+      <label>形式 <select id="fmt"><option value="wav">WAV</option><option value="flac">FLAC</option></select></label>
+    </div>
+    <div id="presets" class="small muted">フォルダを選んでください。</div>
+    <div class="row">
+      <span id="picked" class="small muted">0 件選択</span>
+      <button id="btnRun" class="primary">リアンプしてステムを書き出す</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>結果</h3>
+    <div class="row">
+      <select id="jobSel"></select>
+      <button id="btnResume">続きから再開</button>
+    </div>
+    <div id="stems" class="small muted">ジョブを選んでください。</div>
+  </section>
+
+  <section class="panel">
+    <h3>音の地図</h3>
+    <p class="small muted">同じ DI で鳴らした結果を、測定した特徴量(100 Hz〜5 kHz の形、flatness、クレスト)の近さで並べます。
+      近い = 測定値が似ている、というだけで、音の良し悪しではありません。除外の印が付いたものは入りません。</p>
+    <div class="row"><label>DI <select id="mapDi"></select></label><button id="btnMap">地図を描く</button></div>
+    <div id="map"></div>
+    <div id="near" class="small"></div>
+  </section>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/batch.js"></script>
+</body>
+</html>

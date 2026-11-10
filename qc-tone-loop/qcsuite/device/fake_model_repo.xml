@@ -1,0 +1,158 @@
+<?xml version="1.0" ?>
+<!--
+  The fake unit's ModelRepo.xml: HAND-WRITTEN for qcsuite's mock, in the shape of
+  the real file (Category > Model > Parameter, the same attribute names). It is NOT
+  Neural DSP's data: names, parameter lists and wire order mirror the fake catalog
+  in fake_data.py (which is synthetic), so every Parameter here sits at the same
+  index as in the fake catalog (tests/test_feat_editor.py checks that). The display
+  attributes (displayPos, skew, stepNames, min_string, hidden, ...) are invented to
+  exercise the editor the way the real file does. Models not listed fall back to the
+  catalog order with no extras, as they would if the real fetch failed.
+  The tm ("Based on ...") strings are the origins Neural DSP publishes in its device
+  list, so the editor's real-gear photo panel can be tried on the mock.
+-->
+<Models>
+  <Category id="0" name="Guitar Overdrive">
+    <Model id="2" name="Obsessive Drive" tm="Based on Fulltone® OCD®">
+      <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float" units=""/>
+      <Parameter defaultValue="5" max="10" min="0" name="TONE" type="float" units=""/>
+      <Parameter defaultValue="5" max="10" min="0" name="LEVEL" type="float" units=""/>
+    </Model>
+  </Category>
+  <Category id="1" name="Guitar Amplifier">
+    <Model id="1001" name="Brit 2203" tm="Based on Marshall® JCM800®">
+      <Parameter defaultValue="5" displayPos="0" max="10" min="0" name="DRIVE" type="float" units=""/>
+      <Parameter defaultValue="5" displayPos="1" max="10" min="0" name="BASS" type="float" units=""/>
+      <Parameter defaultValue="5" displayPos="2" max="10" min="0" name="MID" type="float" units=""/>
+      <Parameter defaultValue="5" displayPos="3" max="10" min="0" name="TREBLE" type="float" units=""/>
+      <Parameter defaultValue="5" displayPos="5" max="10" min="0" name="PRESENCE" type="float" units=""/>
+      <Parameter defaultValue="5" displayPos="4" max="10" min="0" name="DEPTH" type="float" units=""/>
+      <Parameter defaultValue="3" displayPos="6" max="10" min="0" name="VOLUME" type="float" units=""/>
+      <Parameter defaultValue="0.76923077" displayPos="7" max="1" min="0" name="LEVEL" type="float" units="dB"/>
+    </Model>
+    <Model id="1038" name="Brit TM45 Normal" tm="Based on Marshall® JTM 45® - Normal Channel">
+      <Parameter defaultValue="5" displayPos="0" max="10" min="0" name="GAIN 1" type="float" units=""/>
+      <Parameter defaultValue="5" displayPos="1" max="10" min="0" name="GAIN 2" type="float" units=""/>
+      <Parameter defaultValue="5" displayPos="2" max="10" min="0" name="BASS" type="float" units=""/>
+      <Parameter defaultValue="5" displayPos="3" max="10" min="0" name="MIDDLE" type="float" units=""/>
+      <Parameter defaultValue="5" displayPos="4" max="10" min="0" name="TREBLE" type="float" units=""/>
+      <Parameter defaultValue="5" displayPos="6" max="10" min="0" name="PRESENCE" type="float" units=""/>
+      <Parameter defaultValue="5" displayPos="7" max="10" min="0" name="RESONANCE" type="float" units=""/>
+      <Parameter defaultValue="5" displayPos="5" max="10" min="0" name="MASTER" type="float" units=""/>
+      <Parameter defaultValue="0" displayPos="8" max="1" min="0" name="CHANNEL" stepNames="CLEAN,DRIVE" steps="2" type="comboBox" units=""/>
+      <Parameter defaultValue="0.76923077" displayPos="9" max="1" min="0" name="LEVEL" type="float" units="dB"/>
+    </Model>
+    <Model id="40000" name="Plini Clean" plugin_id="Plini" sku="PLUGIN-PLINI" tm="">
+      <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float" units=""/>
+      <Parameter defaultValue="5" max="10" min="0" name="BASS" type="float" units=""/>
+      <Parameter defaultValue="5" max="10" min="0" name="MIDDLE" type="float" units=""/>
+      <Parameter defaultValue="5" max="10" min="0" name="TREBLE" type="float" units=""/>
+      <Parameter defaultValue="5" max="10" min="0" name="PRESENCE" type="float" units=""/>
+      <Parameter defaultValue="5" max="10" min="0" name="MASTER" type="float" units=""/>
+      <Parameter defaultValue="0" max="1" min="0" name="BRIGHT" steps="2" toggleOff="OFF" toggleOn="BRIGHT" type="switch" units=""/>
+      <Parameter defaultValue="0.76923077" max="1" min="0" name="LEVEL" type="float" units="dB"/>
+    </Model>
+  </Category>
+  <Category id="12" name="Cabsim Guitar (M)">
+    <Model id="12001" name="412 CA Stand OS S V30 90S M" tm="Based on Mesa® Standard OS Straight with Celestion® Vintage 30 drivers">
+      <Parameter defaultValue="NG_412_Dynamic 57" max="999" min="0" name="ir selector" steps="1000" type="string" units=""/>
+      <Parameter defaultValue="NG_412_Condenser U47" max="999" min="0" name="ir selector 2" steps="1000" type="string" units=""/>
+      <Parameter defaultValue="3.0" displayPos="1" max="12" min="1" name="DISTANCE" type="float" units="in"/>
+      <Parameter defaultValue="80" displayPos="2" max="500" min="20" min_string="OFF" name="LOW CUT" showAsInteger="true" skew="0.3" type="float" units="Hz"/>
+      <Parameter defaultValue="9000" displayPos="3" max="20000" max_string="OFF" min="2000" name="HIGH CUT" showAsInteger="true" skew="0.3" type="float" units="Hz"/>
+      <Parameter defaultValue="0.0" displayPos="0" max="12" min="-12" name="LEVEL" type="float" units="dB"/>
+    </Model>
+    <Model id="12006" name="412 Brit 60B GB 71 M" tm="Based on Marshall® 1960B® with Celestion® Pulsonic Greenback drivers">
+      <Parameter defaultValue="ML_412 Brit 60B GB 71_Dynamic 57" max="999" min="0" name="ir selector" steps="1000" type="string" units=""/>
+      <Parameter defaultValue="ML_412 Brit 60B GB 71_Ribbon 160" max="999" min="0" name="ir selector 2" steps="1000" type="string" units=""/>
+      <Parameter defaultValue="3.0" displayPos="1" max="12" min="1" name="DISTANCE" type="float" units="in"/>
+      <Parameter defaultValue="80" displayPos="2" max="500" min="20" min_string="OFF" name="LOW CUT" showAsInteger="true" skew="0.3" type="float" units="Hz"/>
+      <Parameter defaultValue="9000" displayPos="3" max="20000" max_string="OFF" min="2000" name="HIGH CUT" showAsInteger="true" skew="0.3" type="float" units="Hz"/>
+      <Parameter defaultValue="0.0" displayPos="0" max="12" min="-12" name="LEVEL" type="float" units="dB"/>
+    </Model>
+  </Category>
+  <Category id="4" name="Equalizer">
+    <Model id="4001" name="Parametric 3" tm="">
+      <Parameter defaultValue="100" displayPos="0" max="500" min="40" name="LOW FREQ" skew="0.4" type="float" units="Hz"/>
+      <Parameter defaultValue="0.0" displayPos="1" max="12" min="-12" name="LOW GAIN" skew="LIN_SKEW" steps="241" type="float" units="dB"/>
+      <Parameter defaultValue="800" displayPos="2" max="5000" min="200" name="MID FREQ" skew="0.4" type="float" units="Hz"/>
+      <Parameter defaultValue="0.0" displayPos="3" max="12" min="-12" name="MID GAIN" skew="LIN_SKEW" steps="241" type="float" units="dB"/>
+      <Parameter defaultValue="1.0" displayPos="4" max="5" min="0.3" name="MID Q" skew="0.5" type="float" units=""/>
+      <Parameter defaultValue="4000" displayPos="5" max="12000" min="1000" name="HIGH FREQ" skew="0.4" type="float" units="Hz"/>
+      <Parameter defaultValue="0.0" displayPos="6" max="12" min="-12" name="HIGH GAIN" skew="LIN_SKEW" steps="241" type="float" units="dB"/>
+      <Parameter defaultValue="0.0" displayPos="7" max="12" min="-12" name="LEVEL" type="float" units="dB"/>
+    </Model>
+  </Category>
+  <Category id="5" name="Compressor">
+    <Model id="5001" name="Legendary 87 M" tm="Based on Universal Audio® 1176®">
+      <Parameter defaultValue="-20" max="12" min="-60" name="THRESHOLD" skew="LIN_SKEW" steps="721" type="float" units="dB"/>
+      <Parameter defaultValue="4" max="20" min="1" name="RATIO" skew="0.5" type="float" units=""/>
+      <Parameter defaultValue="10" max="100" min="0.1" name="ATTACK" skew="0.6" steps="300" type="float" units="ms"/>
+      <Parameter defaultValue="100" max="1000" min="10" name="RELEASE" skew="0.6" steps="300" type="float" units="ms"/>
+      <Parameter defaultValue="0.0" max="12" min="-12" name="LEVEL" type="float" units="dB"/>
+      <Parameter defaultValue="100" max="100" min="0" name="MIX" skew="LIN_SKEW" steps="1001" type="float" units="%"/>
+    </Model>
+  </Category>
+  <Category id="6" name="Delay">
+    <Model id="6001" name="Analog Delay M" tm="">
+      <Parameter defaultValue="350" max="2000" min="1" name="TIME" skew="0.5" type="float" units="ms"/>
+      <Parameter defaultValue="30" max="100" min="0" name="FEEDBACK" type="float" units="%"/>
+      <Parameter defaultValue="25" max="100" min="0" name="MIX" type="float" units="%"/>
+      <Parameter defaultValue="0" max="1" min="0" name="MODE" stepNames="MONO,STEREO" steps="2" type="switch" units=""/>
+    </Model>
+  </Category>
+  <Category id="7" name="Modulation">
+    <Model id="7000" name="Vintage Chorus" tm="">
+      <Parameter defaultValue="1.0" max="10" min="0.1" name="RATE" skew="0.5" type="float" units="Hz"/>
+      <Parameter defaultValue="50" max="100" min="0" name="DEPTH" type="float" units="%"/>
+      <Parameter defaultValue="50" max="100" min="0" name="MIX" type="float" units="%"/>
+    </Model>
+  </Category>
+  <Category id="8" name="Reverb">
+    <Model id="8003" name="Hall" tm="">
+      <Parameter defaultValue="2.0" max="20" min="0.1" name="DECAY" skew="0.5" type="float" units="s"/>
+      <Parameter defaultValue="20" max="500" min="0" name="PREDELAY" type="float" units="ms"/>
+      <Parameter defaultValue="20" max="100" min="0" name="MIX" type="float" units="%"/>
+      <Parameter defaultValue="100" max="1000" min="20" min_string="OFF" name="LOW CUT" showAsInteger="true" skew="0.3" type="float" units="Hz"/>
+      <Parameter defaultValue="8000" max="20000" max_string="OFF" min="1000" name="HIGH CUT" showAsInteger="true" skew="0.3" type="float" units="Hz"/>
+    </Model>
+  </Category>
+  <Category id="14" name="Neural Capture">
+    <Model id="14000" name="Eltron 30" tm="">
+      <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float" units=""/>
+      <Parameter defaultValue="5" max="10" min="0" name="BASS" type="float" units=""/>
+      <Parameter defaultValue="5" max="10" min="0" name="MID" type="float" units=""/>
+      <Parameter defaultValue="5" max="10" min="0" name="TREBLE" type="float" units=""/>
+      <Parameter defaultValue="0.5" max="1" min="0" name="VOLUME" type="float" units="dB"/>
+      <Parameter defaultValue="" hidden="true" max="9999" min="0" name="file_name" type="string"/>
+    </Model>
+  </Category>
+  <Category id="29" name="IRLoaders">
+    <Model id="29001" name="Single M" tm="">
+      <Parameter defaultValue="5" max="10" min="0" name="MIX" type="float" units=""/>
+      <Parameter defaultValue="5" max="10" min="0" name="LEVEL" type="float" units=""/>
+      <Parameter defaultValue="" hidden="true" max="999" min="0" name="IR PATH" type="string"/>
+      <Parameter defaultValue="5" max="10" min="0" name="LOW CUT" type="float" units=""/>
+      <Parameter defaultValue="5" max="10" min="0" name="HIGH CUT" type="float" units=""/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 5" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 6" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 7" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 8" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 9" type="float"/>
+      <Parameter defaultValue="" hidden="true" max="999" min="0" name="IR PATH 2" type="string"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 11" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 12" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 13" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 14" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 15" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 16" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 17" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 18" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 19" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 20" type="float"/>
+      <Parameter hidden="true" max="10" min="0" name="RESERVED 21" type="float"/>
+      <Parameter defaultValue="" hidden="true" max="999" min="0" name="IR NAME" type="string"/>
+      <Parameter defaultValue="" hidden="true" max="999" min="0" name="IR NAME 2" type="string"/>
+    </Model>
+  </Category>
+</Models>
