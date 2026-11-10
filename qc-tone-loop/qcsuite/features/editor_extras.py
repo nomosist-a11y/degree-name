@@ -605,10 +605,13 @@ def _gate(device, body: dict) -> _Done:
         warnings.append(f"行{row + 1} の入力ゲート {name} を送りましたが、読み戻すと {text(after[key])} "
                         "でした。")
     changed = not _same(before[key], after[key], tol if name != "BYPASS" else WIRE_TOL)
-    if before[key] is None:            # nothing to go back to
-        undo = []
+    history = True
+    if before[key] is None:            # nothing to go back to: not an undo step
+        undo, history = [], False
+        warnings.append("元の値が読めなかったため、この変更は取り消せません。")
     return _Done(f"エディター: 行{row + 1} の入力ゲート {name} {text(before[key])} → {text(after[key])}",
-                 changed, [undo] if undo else [], [redo], warnings, {"gate": after})
+                 changed, [undo] if undo else [], [redo], warnings, {"gate": after},
+                 history=history)
 
 
 def _sub(device, body: dict, which: str) -> _Done:
@@ -730,6 +733,14 @@ def _scene_copy(device, body: dict) -> _Done:
         raise EditorError("コピー元とコピー先が同じシーンです。")
     preset, _ = _live(device)
     labels = list(preset.scene_labels)
+    shown = body.get("expect")
+    if isinstance(shown, dict):
+        live = {"from_label": str(labels[a]) if a < len(labels) else "",
+                "to_label": str(labels[b]) if b < len(labels) else "",
+                "from_color": scene_colors(preset)[a], "to_color": scene_colors(preset)[b]}
+        if any(k in shown and shown[k] != live[k] for k in live):
+            raise editor.EditorConflict("シーンの名前か色が画面と違います(本体で変わった可能性があります)。"
+                                 "何も書き込まず、画面を読み直します。")
     device.copy_scene(a, b, swap)
     after = device.current_preset()
     new_labels = list(after.scene_labels)
@@ -741,6 +752,9 @@ def _scene_copy(device, body: dict) -> _Done:
     readback = {"scene_labels": [str(x) for x in new_labels[:SCENES]],
                 "scene_colors": scene_colors(after)}
     if not swap:
+        # The copied-over scene cannot come back, and older entries would write into
+        # it: the undo history stops here.
+        panel.mark_preset_change(device.mock, f"scene copy {sa}->{sb}")
         return _Done(f"エディター: シーン {sa} を シーン {sb} にコピー", True, warnings=warnings,
                      readback=readback, history=False, note=COPY_NOTE)
     item = {"action": "scene_copy", "from": a, "to": b, "swap": True}
@@ -771,11 +785,17 @@ def _scene_mode(device, body: dict) -> _Done:
     word = lambda b: "シーンごと" if b else "全シーン共通"
     base = {"action": "scene_mode", "row": row, "col": col, "model_id": block["model_id"],
             "param": param["name"]}
+    # Turning it off keeps one value: the other scenes' values cannot be brought back,
+    # so that direction is not an undo step (and history stops before it).
+    lossy_off = before["scene_mode"] and not after["scene_mode"]
+    if lossy_off:
+        panel.mark_preset_change(device.mock, "scene mode off")
+        warnings.append("シーンごとの値は戻せないため、取り消しの履歴はここで区切りました。")
     return _Done(f"エディター: {editor._where(block)} {param['name']} {word(before['scene_mode'])}"
                  f" → {word(after['scene_mode'])}", before["scene_mode"] != after["scene_mode"],
                  [{**base, "enabled": before["scene_mode"], "expect": after["scene_mode"]}],
                  [{**base, "enabled": after["scene_mode"], "expect": before["scene_mode"]}],
-                 warnings, {"param": {"name": param["name"], **after}})
+                 warnings, {"param": {"name": param["name"], **after}}, history=not lossy_off)
 
 
 def _tempo(device, body: dict) -> _Done:

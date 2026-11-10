@@ -406,6 +406,19 @@ def _restore(device, saved: dict) -> dict:
     return {"applied": applied, "notes": notes}
 
 
+class _Partial(Exception):
+    """A replay that wrote some items and then stopped: the entry counts as done
+    (repeating it would stop at the first item forever), the player is told."""
+
+
+def _extra_only(entry: dict) -> bool:
+    """An entry for settings outside the grid snapshot (editor extras): its
+    before and after are the same snapshot, and restoring it would overwrite
+    whatever was changed on the unit since."""
+    return bool(entry.get("undo_extra") or entry.get("redo_extra")) and \
+        not (entry.get("patch") or {}).get("ops")
+
+
 def _replay(device, items, result: dict, word: str) -> dict:
     """Replay an entry's ``undo_extra`` / ``redo_extra`` after the snapshot restore."""
     if not items:
@@ -419,9 +432,10 @@ def _replay(device, items, result: dict, word: str) -> dict:
         try:
             out = editor_extras.apply_extra(device, item["action"], body)
         except QcsuiteError as exc:
-            where = "何も書き込んでいません。" if not done else \
-                f"{done} 件だけ戻した状態です。画面を読み直してください。"
-            raise PanelError(f"{word}できませんでした: {exc} {where}") from None
+            if not done:
+                raise PanelError(f"{word}できませんでした: {exc} 何も書き込んでいません。") from None
+            raise _Partial(f"{word}は途中までです: {exc} {done} 件だけ戻しました。残りは本体で確かめて"
+                           "ください(この変更は済んだものとして扱います)。") from None
         done += 1
         result["notes"] = list(result["notes"]) + list(out.get("warnings") or [])
     result["applied"] += done
@@ -435,8 +449,16 @@ def undo(device) -> dict:
         raise PanelError("取り消せる変更がありません。")
     entry = live[-1]
     _same_preset(device, entry["after"])
-    result = _restore(device, entry["before"])
-    result = _replay(device, entry.get("undo_extra"), result, "取り消し")
+    if _extra_only(entry):
+        result = {"applied": 0, "notes": []}
+    else:
+        result = _restore(device, entry["before"])
+    try:
+        result = _replay(device, entry.get("undo_extra"), result, "取り消し")
+    except _Partial as exc:
+        _append(device.mock, {"kind": "undo", "of": entry["id"], "partial": True,
+                              "at": time.strftime("%Y-%m-%d %H:%M:%S")})
+        raise PanelError(str(exc)) from None
     _append(device.mock, {"kind": "undo", "of": entry["id"],
                           "at": time.strftime("%Y-%m-%d %H:%M:%S")})
     return {"undone": entry["id"], "instruction": entry["instruction"], **result}
@@ -449,8 +471,16 @@ def redo(device) -> dict:
     entry_id = state["undone"][-1]
     entry = next(e for e in state["applied"] if e["id"] == entry_id)
     _same_preset(device, entry["before"])
-    result = _restore(device, entry["after"])
-    result = _replay(device, entry.get("redo_extra"), result, "やり直し")
+    if _extra_only(entry):
+        result = {"applied": 0, "notes": []}
+    else:
+        result = _restore(device, entry["after"])
+    try:
+        result = _replay(device, entry.get("redo_extra"), result, "やり直し")
+    except _Partial as exc:
+        _append(device.mock, {"kind": "redo", "of": entry_id, "partial": True,
+                              "at": time.strftime("%Y-%m-%d %H:%M:%S")})
+        raise PanelError(str(exc)) from None
     _append(device.mock, {"kind": "redo", "of": entry_id,
                           "at": time.strftime("%Y-%m-%d %H:%M:%S")})
     return {"redone": entry_id, "instruction": entry["instruction"], **result}

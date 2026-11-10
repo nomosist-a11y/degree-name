@@ -248,7 +248,8 @@
       cell.focus({ preventScroll: true });
       try { cell.setPointerCapture(e.pointerId); } catch { /* pointer gone */ }
       drag = { id: e.pointerId, y: e.clientY, prop: prop(cur), fine: e.shiftKey };
-      X.holding++;
+      if (idle) { clearTimeout(idle); idle = null; }   // a wheel nudge is pending: the drag takes it over
+      else X.holding++;
       cell.classList.add("active");
     });
     cell.addEventListener("pointermove", e => {
@@ -692,12 +693,20 @@
     if (!await confirmDialog("シーンのコピー",
       `シーン ${S[a]} の中身(値・バイパス・名前・色)でシーン ${S[b]} を上書きします。この操作は取り消せません。保存はしません。`,
       "上書きする")) return;
-    post("scene_copy", { from: a, to: b, swap: false }, `シーン ${S[a]} をシーン ${S[b]} にコピーしました`);
+    post("scene_copy", { from: a, to: b, swap: false, expect: sceneExpect(a, b) }, `シーン ${S[a]} をシーン ${S[b]} にコピーしました`);
   }
 
   function swapScenes(a, b) {
     const S = "ABCDEFGH";
-    post("scene_copy", { from: a, to: b, swap: true }, `シーン ${S[a]} とシーン ${S[b]} を入れ替えました`);
+    post("scene_copy", { from: a, to: b, swap: true, expect: sceneExpect(a, b) }, `シーン ${S[a]} とシーン ${S[b]} を入れ替えました`);
+  }
+
+  // What the page showed for both scenes: the server refuses (409) when the unit differs.
+  function sceneExpect(a, b) {
+    const v = ED.view || {};
+    const labels = v.scene_labels || [], colors = v.scene_colors || [];
+    return { from_label: labels[a] ?? "", to_label: labels[b] ?? "",
+      from_color: colors[a] ?? null, to_color: colors[b] ?? null };
   }
 
   // ------------------------------------------------------------ per-scene values, expression pedals
@@ -723,16 +732,19 @@
       X.lastLong = Date.now();
       paramMenu(cell, b, p);
     };
+    let timer = null, start = null, fired = false;
+    const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
     cell.addEventListener("contextmenu", e => {
       e.preventDefault();
+      cancel();                                     // a touch long-press may fire this first
       if (Date.now() - X.lastLong < 800) return;   // the long press already opened it
+      X.lastLong = Date.now();
       if (ED.gesture && ED.gesture.cell === cell) return;
       paramMenu(cell, b, p);
     });
-    let timer = null, start = null, fired = false;
-    const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
     cell.addEventListener("pointerdown", e => {
       if (e.button !== 0) return;
+      if (e.pointerType === "mouse") return;        // a mouse has right-click; a held knob must stay a drag
       fired = false;
       start = { x: e.clientX, y: e.clientY, id: e.pointerId };
       cancel();

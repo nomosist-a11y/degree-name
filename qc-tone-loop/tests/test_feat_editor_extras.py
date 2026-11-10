@@ -300,3 +300,58 @@ def test_routes(client, fake):
     assert client.post("/api/panel/undo", json={}).status_code == 200
     assert client.get("/api/editor/grid").json()["rows"][0]["lane"]["pan"] == 0.5
     assert GRID_CHANGING.match("/api/editor/extra/scene_copy")
+
+
+# -- review fixes (2026-11-11) -------------------------------------------------------------
+
+def test_undo_of_an_extra_keeps_a_knob_turned_on_the_unit_since(device, fake):
+    lane = editor.view(device)["rows"][0]["lane"]
+    ex.write(device, "lane", {"row": 0, "param": "PAN", "value": 0.2, "expect": lane["pan"]})
+    fake.set_param(0, 0, param="BASS", model=fake.catalog[1038], value=0.93)   # on the unit
+    panel.undo(device)
+    bass = next(p for p in device.grid()["blocks"][0]["params"] if p["name"] == "BASS")
+    assert bass["value"] == pytest.approx(0.93, abs=1e-3)
+    assert editor.view(device)["rows"][0]["lane"]["pan"] == lane["pan"]
+
+
+def test_scene_copy_checks_what_the_page_showed_and_stops_history(device, fake):
+    lane = editor.view(device)["rows"][0]["lane"]
+    ex.write(device, "lane", {"row": 0, "param": "PAN", "value": 0.3, "expect": lane["pan"]})
+    device.set_scene_label(3, "Lead")
+    with pytest.raises(editor.EditorConflict):
+        ex.write(device, "scene_copy", {"from": 3, "to": 1, "swap": False,
+                                        "expect": {"from_label": "Old"}})
+    ex.write(device, "scene_copy", {"from": 3, "to": 1, "swap": False,
+                                    "expect": {"from_label": "Lead"}})
+    with pytest.raises(panel.PanelError):
+        panel.undo(device)                      # history stops at the copy
+
+
+def test_turning_scene_mode_off_is_not_an_undo_step(device):
+    amp = editor.view(device)["rows"][0]["cells"][0]
+    on = ex.write(device, "scene_mode", {"row": 0, "col": 0, "model_id": amp["model_id"],
+                                         "param": "BASS", "enabled": True, "expect": False})
+    assert on["id"]
+    off = ex.write(device, "scene_mode", {"row": 0, "col": 0, "model_id": amp["model_id"],
+                                          "param": "BASS", "enabled": False, "expect": True})
+    assert off["id"] is None and any("区切り" in w for w in off["warnings"])
+    with pytest.raises(panel.PanelError):
+        panel.undo(device)
+
+
+def test_a_partial_replay_counts_as_done(device, monkeypatch):
+    lane = editor.view(device)["rows"][0]["lane"]
+    ex.write(device, "lane", {"row": 0, "param": "PAN", "value": 0.2, "expect": lane["pan"]})
+    entry = panel.history(True)[-1]
+    calls = []
+
+    def flaky(device_, action, body):
+        calls.append(action)
+        if len(calls) == 2:
+            raise editor.EditorError("boom")
+        return {"warnings": []}
+    entry["undo_extra"] = entry["undo_extra"] * 2
+    monkeypatch.setattr(panel, "history", lambda mock, limit=None: [entry])
+    monkeypatch.setattr(ex, "apply_extra", flaky)
+    with pytest.raises(panel.PanelError, match="途中まで"):
+        panel.undo(device)
