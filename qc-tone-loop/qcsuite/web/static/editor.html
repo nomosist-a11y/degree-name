@@ -7,6 +7,7 @@
 <title>qcsuite エディター</title>
 <link rel="stylesheet" href="/static/style.css">
 <link rel="stylesheet" href="/static/editor.css">
+<link rel="stylesheet" href="/static/editor_directory.css">
 </head>
 <body class="ed-app">
 <div class="app">
@@ -98,9 +99,10 @@
   <!-- status bar -->
   <footer class="sbar">
     <div class="sbar-left">
-      <span id="stTempo">TEMPO —</span>
+      <button type="button" id="stTempo" class="sbar-btn" aria-haspopup="dialog" title="クリックでテンポを変える(T キーでタップ)">TEMPO —</button>
       <span class="sbar-sep" aria-hidden="true"></span>
       <span id="stScene">シーン —</span>
+      <span class="sbar-sep" aria-hidden="true"></span>
     </div>
     <div class="sbar-mid" id="stApp">qcsuite</div>
     <div class="sbar-right" role="status">
@@ -128,6 +130,7 @@
 <script src="/static/editor_core.js"></script>
 <script src="/static/editor_photos.js"></script>
 <script src="/static/editor_layout.js"></script>
+<script src="/static/editor_extras.js"></script>
 <script src="/static/editor_presets.js"></script>
 <script src="/static/editor.js"></script>
 </body>

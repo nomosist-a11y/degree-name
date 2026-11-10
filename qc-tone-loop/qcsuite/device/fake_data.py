@@ -45,6 +45,19 @@ USER_IRS = "2_q"
 
 LANE_OUTPUT = 23000
 INPUT_GATE = 28000
+#: Row-level models (pyquadcortex QuadCortex.SPLITTER / MIXER / TEMPO_CONTROL).
+#: The parameter ORDER follows the pyquadcortex docstrings; ranges, defaults and
+#: option names are synthetic (the real ones are in the unit's catalog).
+SPLITTER = 10004
+MIXER = 11000
+TEMPO_CONTROL = 25000
+#: Option names the fake puts in ``dynamic_steps`` for the row-level switches.
+#: Synthetic: whether the unit reports names for these at all is not known.
+SPLITTER_OPTIONS = {"TYPE": ["A/B", "Balance", "Crossover"], "STEREO": ["Off", "On"],
+                    "MODE": ["Low/High", "High/Low"]}
+#: Default scene colours (ARGB), synthetic.
+SCENE_COLORS = (0xFFE5484D, 0xFFF76B15, 0xFFFFC53D, 0xFF46A758,
+                0xFF12A594, 0xFF0090FF, 0xFF8E4EC6, 0xFFD6409F)
 CAPTURE_V1 = 14000
 CAPTURE_V2 = 14001
 CAPTURE_MODELS = (CAPTURE_V1, CAPTURE_V2)
@@ -270,6 +283,44 @@ def build_catalog() -> ModelCatalog:
             _p(2, "GAIN REDUCTION", -40.0, 0.0, -40.0, units="dB", type_="grMeter"),
             _p(3, "INPUT GAIN", -24.0, 24.0, 0.0, units="dB"),
             _p(4, "DUMMY", 0, 1, 0, type_="empty")))
+    # Unified splitter order: TYPE, STEREO, BALANCE, LEVEL TO A, LEVEL TO B,
+    # FREQUENCY, MODE (pyquadcortex set_splitter_param). The LEVELs publish the
+    # placeholder 0..1 "dB" like the lane VOLUME.
+    catalog.models[SPLITTER] = Model(
+        id=SPLITTER, name="Splitter", category="Splitter", category_id=27, internal=True,
+        parameters=(
+            _p(0, "TYPE", 0, 1, 0, type_="comboBox", steps=3),
+            _p(1, "STEREO", 0, 1, 0, type_="switch", steps=2),
+            _p(2, "BALANCE", -100.0, 100.0, 0.0, units="%"),
+            _p(3, "LEVEL TO A", 0.0, 1.0, 0.76923077, units="dB"),
+            _p(4, "LEVEL TO B", 0.0, 1.0, 0.76923077, units="dB"),
+            _p(5, "FREQUENCY", 20.0, 20000.0, 1000.0, units="Hz"),
+            _p(6, "MODE", 0, 1, 0, type_="switch", steps=2)))
+    catalog.models[MIXER] = Model(
+        id=MIXER, name="Mixer", category="Mixer", category_id=28, internal=True,
+        parameters=(
+            _p(0, "LEVEL A", 0.0, 1.0, 0.76923077, units="dB"),
+            _p(1, "PAN A", -100.0, 100.0, 0.0, units="%"),
+            _p(2, "LEVEL B", 0.0, 1.0, 0.76923077, units="dB"),
+            _p(3, "PAN B", -100.0, 100.0, 0.0, units="%"),
+            _p(4, "MIXER LEVEL", 0.0, 1.0, 0.76923077, units="dB")))
+    # Tempo Control: 23 described parameters (the preset carries 24). The real
+    # catalog may publish TEMPO as the placeholder 0..1 "BPM"
+    # (pyquadcortex Parameter.range_is_placeholder); the fake gives it a range.
+    tempo = [_p(0, "TEMPO", 30.0, 250.0, 120.0, units="BPM"),
+             _p(1, "TYPE", 0, 1, 0, type_="switch", steps=2),
+             _p(2, "LED LIGHT", 0, 1, 1, type_="switch", steps=2),
+             _p(3, "VOLUME", 0.0, 100.0, 50.0, units="%"),
+             _p(4, "START", 0, 1, 0, type_="switch", steps=2),
+             _p(5, "PAN", -100.0, 100.0, 0.0, units="%"),
+             _p(6, "TIME SIGNATURE", 0, 1, 0, type_="comboBox", steps=21),
+             _p(7, "NOTELENGTH", 0, 1, 0, type_="comboBox", steps=4),
+             _p(8, "SOUND", 0, 1, 0, type_="comboBox", steps=4),
+             _p(9, "ROUTING", 0, 1, 0, type_="comboBox", steps=4)]
+    tempo += [_p(10 + i, f"STEPSTATE{i}", 0, 1, 0, type_="comboBox", steps=4) for i in range(13)]
+    catalog.models[TEMPO_CONTROL] = Model(
+        id=TEMPO_CONTROL, name="Tempo Control", category="Tempo", category_id=29,
+        internal=True, parameters=tuple(tempo))
     next_id = 40000
     for plugin, names in _PLUGIN_AMPS.items():
         for name in names:

@@ -159,6 +159,7 @@ const EdLayout = (() => {
         disabled: !spot || b.color === "cap", onClick: () => duplicate(b, ...spot) },
       { label: "パラメーターを初期値に戻す", disabled: !!b.lossy, onClick: () => reset(b) },
       { label: b.bypassed ? "バイパスを解除" : "バイパス", onClick: () => toggleBypass(b) },
+      ...(window.EdExtras ? EdExtras.blockMenuItems(b) : []),   // footswitch A-H
       { sep: true },
       { label: "削除(Delete)", onClick: () => remove(b) },
       { sep: true },
@@ -182,6 +183,7 @@ const EdLayout = (() => {
     const cur = side === "in" ? r.in_port : r.out_port;
     const items = [{ head: `行${r.row + 1} の${side === "in" ? "入力" : "出力"}` }];
     if (side === "in" && cur === "PREV_ROW") items.push({ info: "いまは前の行から信号が来ています(Prev. row)。" });
+    if (window.EdExtras) items.push(...EdExtras.portMenuItems(r, side));       // lane / gate panel
     for (const p of list) {
       items.push({ label: p.label, on: p.id === cur,
         disabled: p.id === cur,
@@ -193,6 +195,7 @@ const EdLayout = (() => {
       if (r.split) items.push({ info: `列${r.split[0] + 1} で分岐、${r.split[1] < 0 ? "合流しない" : `列${r.split[1] + 1} で合流`}` });
       items.push({ label: r.split ? "分岐の位置を変える…" : "分岐を作る…", onClick: () => splitDialog(r) });
       if (r.split) items.push({ label: "分岐を外す", onClick: () => act("split", { row: r.row, clear: true, expect: r.split }, `行${r.row + 1} の分岐を外しました`) });
+      if (r.split && window.EdExtras) items.push(EdExtras.splitMenuItem(r));   // splitter / mixer panel
     }
     items.push({ sep: true }, { info: "本体全体の入出力の設定(I/O、Global EQ など)はここでは変えません。" });
     openMenu(anchor, items);
@@ -264,13 +267,15 @@ const EdLayout = (() => {
     const lab = (labels[i] || "").trim();
     const btn = el("button", { type: "button", class: `pb-scene ${active === s ? "on" : ""}`,
       "aria-pressed": String(active === s),
-      title: `${lab ? `${s}: ${lab}\n` : ""}クリックでシーン ${s} に切り替え(本体の音が変わります)。右クリック(長押し)で名前を変更` }, s);
+      title: `${lab ? `${s}: ${lab}\n` : ""}クリックでシーン ${s} に切り替え(本体の音が変わります)。右クリック(長押し)で名前・色・コピー` }, s);
+    if (window.EdExtras) EdExtras.decorateScene(btn, i);   // scene colour bar
     btn.addEventListener("click", () => { if (active !== s) switchScene(i); });
     btn.addEventListener("contextmenu", e => {
       e.preventDefault();
       openMenu(btn, [{ head: `シーン ${s}${lab ? `: ${lab}` : ""}` },
         { label: "名前を変える…", onClick: () => renameScene(i) },
-        active !== s ? { label: `シーン ${s} に切り替える`, onClick: () => switchScene(i) } : null]);
+        active !== s ? { label: `シーン ${s} に切り替える`, onClick: () => switchScene(i) } : null,
+        ...(window.EdExtras ? EdExtras.sceneMenuItems(i, btn) : [])]);
     });
     return btn;
   }

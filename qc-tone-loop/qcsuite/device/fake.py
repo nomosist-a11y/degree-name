@@ -200,6 +200,14 @@ class FakeQuadCortex:
             if scp is not None:
                 scp.split = -1
                 scp.mix = -1
+                # Splitter and mixer exist only on rows 0 and 2 (pyquadcortex splits()).
+                # Held in splitter[] / mixer[] (the read side); host writes to
+                # combined_splitter land here, as on the unit.
+                self._fill_row_model(chain.splitter.add(), data.SPLITTER)
+                self._fill_row_model(chain.mixer.add(), data.MIXER)
+                for _ in range(SCENES):
+                    chain.splitBypass.add().bypass = False
+                    chain.mixBypass.add().bypass = False
             bp = p.bypass.add()
             for _ in range(COLUMNS):
                 cb = bp.colBypass.add()
@@ -207,8 +215,27 @@ class FakeQuadCortex:
                     cb.sceneBypass.add().bypass = False
         for _ in range(SCENES):
             p.scene_labels.append(pq.SCENE_UNLABELLED)
+        p.scene_colors.extend(data.SCENE_COLORS)
+        # Tempo: one TempoControl entry, 24 positional params (no index field),
+        # as pyquadcortex tempo_params() describes the stored form.
+        tp = p.tempoProgramData.add()
+        tp.hash = data.TEMPO_CONTROL
+        tempo = self._catalog_obj[data.TEMPO_CONTROL]
+        for spec in tempo.parameters:
+            self._fill_param(tp.params.add(), None, self._default_value(spec))
+        self._fill_param(tp.params.add(), None, 0.0)          # the 24th, undescribed
         p.default_scene = 0
         return p
+
+    def _fill_row_model(self, m, model_id):
+        m.hash = model_id
+        model = self._catalog_obj[model_id]
+        for spec in model.parameters:
+            prm = m.params.add()
+            self._fill_param(prm, None, self._default_value(spec))
+            options = data.SPLITTER_OPTIONS.get(spec.name) if model_id == data.SPLITTER else None
+            if options and spec.option_count:
+                prm.dynamic_steps.extend(options[: spec.option_count])
 
     @staticmethod
     def _default_value(spec):
@@ -830,6 +857,200 @@ class FakeQuadCortex:
             prm = self.live.chains[row].input_control[0].params[spec.index]
             for pv in prm.param_values:
                 pv.float_value = float(value)
+            self.dirty = True
+
+    # -- row models, scenes, tempo, footswitches (editor extras) -------------
+    #
+    # Behaviour taken from the pyquadcortex docstrings: splitter / mixer exist
+    # only on rows 0 and 2 (odd rows raise ValueError); a splitter write lands in
+    # the read-side splitter[]; one split-mute write sets all eight scenes and is
+    # reported in mixBypass; a scene copy carries label and colour; a momentary
+    # write lands only on a footswitch driving exactly one block and is ignored
+    # silently otherwise; stomp_is_momentary / labels are keyed by footswitch.
+    # Guess (no fact either way): a footswitch left with no block loses its
+    # labels and its momentary flag.
+
+    @staticmethod
+    def _write_values(prm, value, scene):
+        targets = [scene] if prm.scene_mode else range(len(prm.param_values))
+        for s in targets:
+            if s < len(prm.param_values):
+                prm.param_values[s].float_value = float(value)
+
+    def _row_model_write(self, collection, model_id, row, param, value, real, scene):
+        if row % 2:
+            raise ValueError(f"a {collection} exists only on row 0 or 2")
+        model = self._catalog_obj[model_id]
+        spec = model.parameter(param) if isinstance(param, str) else model.parameters[param]
+        if real is not None:
+            value = spec.to_normalized(real)
+        if value is None:
+            raise TypeError(f"set_{collection}_param needs value= (0..1) or real= (own units)")
+        with self._lock:
+            if scene is not None:
+                self.switch_scene(scene)
+            items = getattr(self.live.chains[row], collection)
+            if not len(items) or spec.index >= len(items[0].params):
+                return None                       # nothing there: ignored, like the unit
+            self._write_values(items[0].params[spec.index], value, self.scene)
+            self.dirty = True
+        return None
+
+    def set_splitter_param(self, row: int, param, value: float = None, real=None,
+                           scene=None, promote: bool = True):
+        self._log("set_splitter_param", row, param, value)
+        return self._row_model_write("splitter", data.SPLITTER, row, param, value, real, scene)
+
+    def set_mixer_param(self, row: int, param, value: float = None, real=None,
+                        scene=None, promote: bool = True):
+        self._log("set_mixer_param", row, param, value)
+        return self._row_model_write("mixer", data.MIXER, row, param, value, real, scene)
+
+    def set_split_mute(self, row: int, muted: bool = True):
+        self._log("set_split_mute", row, muted)
+        if row % 2:
+            raise ValueError("a splitter or mixer exists only on row 0 or 2")
+        with self._lock:
+            chain = self.live.chains[row]
+            for coll in (chain.splitBypass, chain.mixBypass):
+                for sb in coll:
+                    sb.bypass = bool(muted)
+            self.dirty = True
+
+    def set_scene_color(self, scene_index: int, color: int):
+        self._log("set_scene_color", scene_index, color)
+        with self._lock:
+            while len(self.live.scene_colors) < SCENES:
+                self.live.scene_colors.append(0)
+            self.live.scene_colors[scene_index] = int(color) & 0xFFFFFFFF
+            self.dirty = True
+
+    def _scene_params(self):
+        p = self.live
+        for chain in p.chains:
+            for coll in (chain.models, chain.output_control, chain.input_control,
+                         chain.splitter, chain.mixer):
+                for m in coll:
+                    yield from m.params
+
+    def copy_scene(self, from_index: int, to_index: int, swap: bool = False):
+        self._log("copy_scene", from_index, to_index, swap)
+        a, b = int(from_index), int(to_index)
+        with self._lock:
+            p = self.live
+
+            def move(seq, getter, setter):
+                if max(a, b) >= len(seq):
+                    return
+                va, vb = getter(seq[a]), getter(seq[b])
+                setter(seq, b, va)
+                if swap:
+                    setter(seq, a, vb)
+
+            for prm in self._scene_params():
+                if max(a, b) < len(prm.param_values):
+                    va = copy.deepcopy(prm.param_values[a])
+                    vb = copy.deepcopy(prm.param_values[b])
+                    prm.param_values[b].CopyFrom(va)
+                    if swap:
+                        prm.param_values[a].CopyFrom(vb)
+            for bp in p.bypass:
+                for cb in bp.colBypass:
+                    move(cb.sceneBypass, lambda x: x.bypass,
+                         lambda seq, i, v: setattr(seq[i], "bypass", v))
+            for field in ("scene_labels", "scene_colors"):
+                seq = getattr(p, field)
+                if max(a, b) < len(seq):
+                    va, vb = seq[a], seq[b]
+                    seq[b] = va
+                    if swap:
+                        seq[a] = vb
+            self.dirty = True
+            self.switch_scene(self.scene)            # refresh what sounds
+
+    TEMPO_PARAMS = _RealQC.TEMPO_PARAMS
+
+    def set_tempo_param(self, param, value: float = None, real=None):
+        self._log("set_tempo_param", param, value, real)
+        model = self._catalog_obj[data.TEMPO_CONTROL]
+        index = param
+        if isinstance(param, str):
+            key = param.strip().upper()
+            if key == "MUTE":
+                raise ValueError("tempo parameter 4 is inverted against the name MUTE")
+            index = self.TEMPO_PARAMS[key] if key in self.TEMPO_PARAMS else \
+                model.parameter(param).index
+        if real is not None:
+            value = model.parameters[index].to_normalized(real)
+        if value is None:
+            raise TypeError("set_tempo_param needs value= (0..1) or real= (own units)")
+        with self._lock:
+            tp = self.live.tempoProgramData[0]
+            for pv in tp.params[index].param_values:
+                pv.float_value = float(value)
+            self.dirty = True
+
+    def _footswitch_blocks(self, footswitch: int) -> int:
+        return sum(1 for a in self.live.stomp_mode_assignments if a.stomp_index == footswitch)
+
+    def set_stomp_assignment(self, row: int, column: int, footswitch):
+        self._log("set_stomp_assignment", row, column, int(footswitch))
+        with self._lock:
+            self.clear_stomp_assignment(row, column)
+            a = self.live.stomp_mode_assignments.add()
+            a.row, a.column, a.stomp_index = int(row), int(column), int(footswitch)
+            self.dirty = True
+
+    def clear_stomp_assignment(self, row: int, column: int):
+        self._log("clear_stomp_assignment", row, column)
+        with self._lock:
+            p = self.live
+            keep = [copy.deepcopy(a) for a in p.stomp_mode_assignments
+                    if (a.row, a.column) != (row, column)]
+            gone = {a.stomp_index for a in p.stomp_mode_assignments
+                    if (a.row, a.column) == (row, column)}
+            del p.stomp_mode_assignments[:]
+            for a in keep:
+                p.stomp_mode_assignments.add().CopyFrom(a)
+            for fs in gone:
+                if not self._footswitch_blocks(fs):
+                    for m in (p.stomp_labels, p.single_stomp_labels, p.stomp_is_momentary):
+                        if fs in m:
+                            del m[fs]
+            self.dirty = True
+
+    def set_stomp_momentary(self, footswitch, momentary: bool = True):
+        self._log("set_stomp_momentary", int(footswitch), momentary)
+        with self._lock:
+            if self._footswitch_blocks(int(footswitch)) != 1:
+                return None                   # accepted, ignored, no echo (the device rule)
+            self.live.stomp_is_momentary[int(footswitch)] = bool(momentary)
+            self.dirty = True
+
+    def set_stomp_label(self, footswitch, label: str, single: bool = False):
+        self._log("set_stomp_label", int(footswitch), label, single)
+        with self._lock:
+            target = self.live.single_stomp_labels if single else self.live.stomp_labels
+            target[int(footswitch)] = label
+            self.dirty = True
+
+    def set_expression(self, row: int, column: int, param, pedal: int = 1,
+                       minimum: float = 0.0, maximum: float = 1.0, model=None):
+        self._log("set_expression", row, column, param, pedal, minimum, maximum)
+        with self._lock:
+            m = self.live.chains[row].models[column]
+            if not m.hash:
+                return None
+            if isinstance(param, int):
+                index = param
+            else:
+                index = self._catalog_obj[m.hash].parameter(param).index
+            if index >= len(m.params):
+                return None
+            prm = m.params[index]
+            prm.expression = int(pedal)
+            prm.expression_min = float(minimum)
+            prm.expression_max = float(maximum)
             self.dirty = True
 
     # -- captures and IRs ----------------------------------------------------

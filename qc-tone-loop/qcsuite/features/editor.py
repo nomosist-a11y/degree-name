@@ -308,7 +308,7 @@ def view(device, repo="load") -> dict:
                      "is_input": in_port not in ("EMPTY",),
                      "reaches_output": r["out_port"] in panel.REACHES_OUT, "cells": line})
     labels = list(getattr(preset, "scene_labels", []) or [])
-    return {"scene": grid.get("active_scene"), "rows": rows, "repo": repo_info(repo),
+    out = {"scene": grid.get("active_scene"), "rows": rows, "repo": repo_info(repo),
             "preset": {"name": getattr(preset, "name", "") or "",
                        "dirty": device.preset_dirty()},
             "scene_labels": [str(x) for x in labels[:8]],
@@ -316,6 +316,10 @@ def view(device, repo="load") -> dict:
                       "out": [{"id": p, "label": port_label(p)} for p in PORTS_OUT]},
             "tempo": round(float(getattr(preset, "tempo", 0) or 0), 1) or None,
             "note": NOT_SAVED}
+    # Row output, gate, splitter / mixer, scene colours, tempo, footswitches,
+    # per-parameter scene mode and pedals: from the same read of the preset.
+    from qcsuite.features import editor_extras      # imports this module
+    return editor_extras.decorate(out, preset, catalog)
 
 
 # -- writes ------------------------------------------------------------------------------

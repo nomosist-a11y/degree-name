@@ -235,6 +235,7 @@ function groupByKey(key) {
 async function loadGrid() {
   if (ED.gesture) { ED.reloadWanted = true; return; }   // redraw after the knob is let go
   if (window.EdLayout && EdLayout.dragging()) { ED.reloadWanted = true; return; }   // a block is in the air
+  if (window.EdExtras && EdExtras.busy()) { ED.reloadWanted = true; return; }       // a row knob is held
   if (ED.loading) return ED.loading;
   ED.loading = (async () => {
     try {
@@ -300,6 +301,7 @@ function renderStatus() {
   const app = document.getElementById("stApp");
   app.textContent = `qcsuite v${(QC.status && QC.status.version) || "?"}`;
   app.title = v.repo && v.repo.note ? `表示属性: ${v.repo.note}` : "";
+  if (window.EdExtras) EdExtras.decorateStatus();   // tempo control, Gig View
 }
 
 function portNode(port, side, dead, rowNo) {
@@ -330,6 +332,7 @@ function renderGrid() {
   });
   box.replaceChildren(rows.length ? rows : el("p", { class: "ed-empty" }, "グリッドを読めませんでした。"));
   if (rows.length) EdLayout.decorate(box);
+  if (rows.length && window.EdExtras) EdExtras.decorateGrid(box);   // M/S on ports, footswitch letters
 }
 
 function cellNode(c, row, col) {
@@ -609,6 +612,7 @@ const DOTS_V = () => svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" },
 function renderParams() {
   const host = document.getElementById("edParams");
   if (!ED.view) return;
+  if (window.EdExtras && EdExtras.renderPanel(host)) return;   // row output / gate / split panel
   const b = findBlock(ED.sel);
   if (!b) {
     const msg = selIsEmptyCell()
@@ -672,8 +676,9 @@ function renderParams() {
 }
 
 function paramCell(b, p) {
-  if (p.kind === "knob") return knobCell(b, p);
-  if (p.kind === "select") return selectCellParam(b, p);
+  const extras = c => (window.EdExtras ? EdExtras.decorateParam(c, b, p) : c);   // S / EXP tags, long-press menu
+  if (p.kind === "knob") return extras(knobCell(b, p));
+  if (p.kind === "select") return extras(selectCellParam(b, p));
   return el("div", { class: "cc-cell text off", title: p.why_not || "" },
     el("span", { class: "cc-name" }, p.name),
     el("div", { class: "cc-body" }, el("span", { class: "cc-text", "aria-disabled": "true" }, p.text ?? "—")));
@@ -1144,6 +1149,7 @@ document.getElementById("btnPresetMenu").addEventListener("click", e => openMenu
   { label: "読み直す", onClick: () => { loadGrid(); loadHistory(); loadAB(); } },
   { label: "sandbox に保存…", onClick: () => saveFlow() },
   { label: "履歴", onClick: () => openHistory() },
+  { label: "フットスイッチの一覧…", onClick: () => EdExtras.openStomps() },
   { sep: true },
   { info: "プリセットは < > か名前のクリックで切り替えます(音が変わります。保存前の編集があるときは確認します)。シーンは A〜H。本体で変えたものは自動で画面に反映されます。" },
 ]));

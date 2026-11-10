@@ -132,7 +132,10 @@ def snapshot(qc) -> dict:
                     state = pq.param_state(p, b.row, b.column, spec.index)
                 except IndexError:
                     continue
-                raw = state.values[0] if state.values else None
+                # A scene-mode parameter keeps one value per scene: show the active
+                # scene's (slots beyond the first are not maintained otherwise).
+                slot = scene if state.scene_mode and scene < len(state.values) else 0
+                raw = state.values[slot] if state.values else None
                 param = {"name": spec.name, "index": spec.index}
                 if isinstance(raw, str):
                     param["text"] = raw

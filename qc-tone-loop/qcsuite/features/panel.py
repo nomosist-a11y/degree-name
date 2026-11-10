@@ -280,17 +280,29 @@ def apply(device, patch: dict, instruction: str = "", engine: str = "rules",
 
 
 def record(mock: bool, patch: dict, before: dict, after: dict, *, instruction: str = "",
-           engine: str = "rules", summary=None, warnings=None) -> str:
+           engine: str = "rules", summary=None, warnings=None, undo_extra=None,
+           redo_extra=None) -> str:
     """Log a change already made on the live grid, so undo / redo / A/B see it.
 
     ``before`` / ``after`` are qctone grid snapshots. :func:`apply` uses this;
     so does the editor (:mod:`qcsuite.features.editor`), whose drags send their
     intermediate values before the change is complete.
+
+    ``undo_extra`` / ``redo_extra``: settings the snapshot does not hold (row
+    output, gate, splitter, scene colours, tempo, footswitches...), as lists of
+    ``{"action", ...body}``. :func:`undo` / :func:`redo` replay them through
+    :func:`qcsuite.features.editor_extras.apply_extra` after the snapshot
+    restore; each body carries its own ``expect``, so a setting changed on the
+    unit in the meantime stops the replay instead of being overwritten.
     """
     entry = {"kind": "apply", "id": uuid.uuid4().hex[:8], "at": time.strftime("%Y-%m-%d %H:%M:%S"),
              "instruction": instruction, "engine": engine, "patch": patch,
              "summary": list(summary or []), "warnings": list(warnings or []),
              "before": before, "after": after}
+    if undo_extra:
+        entry["undo_extra"] = list(undo_extra)
+    if redo_extra:
+        entry["redo_extra"] = list(redo_extra)
     _append(mock, entry)
     return entry["id"]
 
@@ -394,6 +406,28 @@ def _restore(device, saved: dict) -> dict:
     return {"applied": applied, "notes": notes}
 
 
+def _replay(device, items, result: dict, word: str) -> dict:
+    """Replay an entry's ``undo_extra`` / ``redo_extra`` after the snapshot restore."""
+    if not items:
+        return result
+    from qcsuite.features import editor_extras      # imports this module
+    if not result["applied"]:       # the snapshot restore did nothing: its notes do not apply
+        result["notes"] = [n for n in result["notes"] if not n.startswith("文字列パラメーター")]
+    done = 0
+    for item in items:
+        body = {k: v for k, v in item.items() if k != "action"}
+        try:
+            out = editor_extras.apply_extra(device, item["action"], body)
+        except QcsuiteError as exc:
+            where = "何も書き込んでいません。" if not done else \
+                f"{done} 件だけ戻した状態です。画面を読み直してください。"
+            raise PanelError(f"{word}できませんでした: {exc} {where}") from None
+        done += 1
+        result["notes"] = list(result["notes"]) + list(out.get("warnings") or [])
+    result["applied"] += done
+    return result
+
+
 def undo(device) -> dict:
     state = _state(device.mock)
     live = [e for e in state["applied"] if e["id"] not in state["undone"]]
@@ -402,6 +436,7 @@ def undo(device) -> dict:
     entry = live[-1]
     _same_preset(device, entry["after"])
     result = _restore(device, entry["before"])
+    result = _replay(device, entry.get("undo_extra"), result, "取り消し")
     _append(device.mock, {"kind": "undo", "of": entry["id"],
                           "at": time.strftime("%Y-%m-%d %H:%M:%S")})
     return {"undone": entry["id"], "instruction": entry["instruction"], **result}
@@ -415,6 +450,7 @@ def redo(device) -> dict:
     entry = next(e for e in state["applied"] if e["id"] == entry_id)
     _same_preset(device, entry["before"])
     result = _restore(device, entry["after"])
+    result = _replay(device, entry.get("redo_extra"), result, "やり直し")
     _append(device.mock, {"kind": "redo", "of": entry_id,
                           "at": time.strftime("%Y-%m-%d %H:%M:%S")})
     return {"redone": entry_id, "instruction": entry["instruction"], **result}

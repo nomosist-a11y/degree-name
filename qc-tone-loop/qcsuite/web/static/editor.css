@@ -538,3 +538,86 @@ body.ed-app button.ph-btn { font-size: 11.5px; }
 @media (min-width: 420px) and (max-width: 639px) {
   .cc-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* ---------------------------------------------------------------- extras (editor_extras.js) */
+/* status bar: tempo control, Gig View */
+.sbar-btn { background: transparent; border: 1px solid #333; border-radius: 4px; color: #cfcfcf; padding: 1px 8px;
+  font: inherit; letter-spacing: inherit; cursor: pointer; line-height: 1.5; }
+.sbar-btn:hover { border-color: #777; color: #fff; }
+.sbar-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.sbar-btn.on { border-color: var(--green); color: var(--green); }
+.sbar-btn.ro { border-style: dashed; color: #8a8a8a; }
+.sbar-btn.ex-tapflash { animation: ex-tap .18s ease-out; }
+@keyframes ex-tap { from { background: var(--yellow); color: #111; } to { background: transparent; } }
+/* own popovers (tempo, scene colours) */
+.pop.ex-pop { padding: 6px; }
+.ex-tempo { display: flex; flex-direction: column; gap: 8px; width: 240px; max-width: 100%; }
+.ex-trow { display: flex; align-items: center; gap: 6px; padding: 0 4px; }
+.ex-trow input { flex: 1 1 auto; min-width: 0; width: 90px; background: #141414; color: #eee; border: 1px solid #3a3a3a;
+  border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 16px; }
+.ex-unit { color: #8a8a8a; font-size: 12px; }
+.pop .ex-tbtn { width: auto; flex: 0 0 auto; background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 6px;
+  padding: 6px 10px; text-align: center; }
+.pop .ex-tap { width: auto; margin: 0 4px; height: 56px; border-radius: 8px; background: #2a2a2a; border: 1px solid #3a3a3a;
+  text-align: center; font-size: 18px; letter-spacing: .12em; color: #fff; touch-action: manipulation; user-select: none;
+  -webkit-user-select: none; }
+.pop .ex-tap:active:not(:disabled) { background: var(--yellow); color: #111; }
+.pop .ex-tap:disabled, .pop .ex-tbtn:disabled { color: #666; }
+.ex-tapv { min-height: 1.2em; text-align: center; color: var(--yellow); font-size: 13px; }
+.ex-sw { display: grid; grid-template-columns: repeat(4, 40px); gap: 8px; padding: 6px 4px; }
+.pop .ex-sw button { width: 40px; height: 40px; padding: 0; border-radius: 8px; background: var(--sw);
+  border: 2px solid transparent; box-shadow: inset 0 0 0 1px rgba(0,0,0,.35); }
+.pop .ex-sw button:hover, .pop .ex-sw button:focus-visible { background: var(--sw); border-color: #fff; }
+.pop .ex-sw button.on { border-color: #fff; box-shadow: inset 0 0 0 2px #000; }
+/* scene colour: a thin bar under the letter (the active scene stays yellow) */
+.pb-scene.ex-scol { box-shadow: inset 0 -3px 0 var(--scol); }
+.pb-scene.ex-scol.on { box-shadow: inset 0 -3px 0 var(--scol), inset 0 -4px 0 #151515; }
+/* grid: output badges, open panel, footswitch letters */
+.ex-pb { position: absolute; top: 4px; left: 0; right: 0; display: flex; justify-content: center; gap: 2px; line-height: 1; }
+.ex-pb b { font-size: 9px; font-weight: 700; padding: 2px 3px; border-radius: 3px; }
+.ex-pb b.m { background: #E5483D; color: #fff; }
+.ex-pb b.s { background: var(--yellow); color: #111; }
+.ed-port.ex-on { box-shadow: inset 0 0 0 2px #9a9a9a; }
+.ex-fs { position: absolute; z-index: 2; bottom: calc(50% - var(--sq) / 2 - 6px); right: calc(50% - var(--sq) / 2 - 6px);
+  min-width: 17px; height: 17px; border-radius: 4px; background: #e8e8e8; color: #111; font-size: 11px; font-weight: 700;
+  line-height: 17px; text-align: center; pointer-events: none; }
+/* parameter panel: scene / pedal tags, row panels */
+.cc-cell.knob, .cc-cell.select { -webkit-touch-callout: none; }
+.ex-ptag { display: inline-block; margin-left: 6px; padding: 0 4px; border-radius: 3px; font-size: 10px; line-height: 15px;
+  vertical-align: 1px; letter-spacing: .03em; }
+.ex-ptag.s { background: var(--yellow); color: #111; }
+.ex-ptag.e { background: #2c3c5c; color: #a9c4ff; }
+.ex-panel .ex-dot { cursor: default; }
+.ex-panel .ex-dot::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.ex-panel .ex-close { color: #bdbdbd; }
+.ex-panel .ex-close svg { width: 20px; height: 20px; }
+.ex-sec { background: #1b1b1b; color: #8a8a8a; font-size: 11px; letter-spacing: .08em; padding: 6px 14px;
+  border-bottom: 1px solid #000; }
+/* footswitch overview */
+.ex-fslist { display: flex; flex-direction: column; border: 1px solid #2c2c2c; border-radius: 8px; overflow: hidden;
+  max-height: min(56vh, 480px); overflow-y: auto; }
+.ex-fsrow { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; grid-template-areas: "l n m" ". b b";
+  gap: 4px 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid #242424; }
+.ex-fsrow:last-child { border-bottom: 0; }
+.ex-fsrow.idle { opacity: .55; }
+.ex-fsl { grid-area: l; width: 24px; height: 24px; border-radius: 5px; background: #e8e8e8; color: #111; font-weight: 700;
+  text-align: center; line-height: 24px; }
+.ex-fsrow.idle .ex-fsl { background: #444; color: #bbb; }
+dialog.ed-dlg .ex-fsrow input { grid-area: n; width: 100%; min-width: 0; padding: 5px 8px; border: 1px solid #3a3a3a;
+  border-radius: 6px; font: inherit; }
+dialog.ed-dlg .ex-mom { grid-area: m; padding: 5px 10px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
+dialog.ed-dlg .ex-mom.on { background: var(--yellow); border-color: var(--yellow); color: #111; }
+.ex-fsb { grid-area: b; font-size: 11.5px; color: #8a8a8a; overflow-wrap: anywhere; }
+.ex-expf label { display: flex; align-items: center; gap: 6px; }
+dialog.ed-dlg .ex-expf input { width: 80px; }
+@media (max-width: 639px) {
+  .ex-pb { top: 2px; }
+  .ex-pb b { font-size: 8px; padding: 1px 2px; }
+  .ex-fs { min-width: 12px; height: 12px; line-height: 12px; font-size: 8px; border-radius: 3px;
+    bottom: calc(50% - var(--sq) / 2 - 4px); right: calc(50% - var(--sq) / 2 - 4px); }
+  .sbar-left { gap: 8px; flex-wrap: wrap; white-space: normal; }
+  .sbar-btn { padding: 1px 6px; }
+  .ex-sw { grid-template-columns: repeat(4, 36px); }
+  .pop .ex-sw button { width: 36px; height: 36px; }
+  .ex-tempo { width: min(240px, calc(100vw - 32px)); }
+}

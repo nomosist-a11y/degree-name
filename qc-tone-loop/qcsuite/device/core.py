@@ -506,6 +506,90 @@ class Device:
         with self._lock:
             self.qc.set_input_gate(row, name, value=float(value))
 
+    # -- row models, scenes, tempo, footswitches (the editor's extras) ----------
+    #
+    # Thin wrappers: each checks the policy and takes the lock, and sends one
+    # pyquadcortex call. None of them saves anything; none touches whole-unit
+    # settings. The caller (qcsuite.features.editor_extras) checks the live
+    # state first and reads back afterwards.
+
+    def set_splitter_param(self, row: int, name: str, value: float):
+        """A splitter parameter on row 0 or 2, by name, as a 0..1 wire value."""
+        self.policy.check_grid("スプリッターの書き込み")
+        with self._lock:
+            self.qc.set_splitter_param(row, name, value=float(value))
+
+    def set_mixer_param(self, row: int, name: str, value: float):
+        """A mixer parameter on row 0 or 2, by name, as a 0..1 wire value."""
+        self.policy.check_grid("ミキサーの書き込み")
+        with self._lock:
+            self.qc.set_mixer_param(row, name, value=float(value))
+
+    def set_split_mute(self, row: int, muted: bool):
+        """The split/mix path's MUTE on row 0 or 2 (one control, all scenes)."""
+        self.policy.check_grid("分岐のミュートの書き込み")
+        with self._lock:
+            self.qc.set_split_mute(row, bool(muted))
+
+    def set_scene_color(self, scene: int, color: int):
+        """A scene's colour, ARGB uint32."""
+        self.policy.check_grid("シーンの色の書き込み")
+        with self._lock:
+            self.qc.set_scene_color(int(scene), int(color))
+
+    def copy_scene(self, from_index: int, to_index: int, swap: bool = False):
+        """Copy (or swap) one scene onto another, label and colour included."""
+        self.policy.check_grid("シーンのコピー")
+        with self._lock:
+            self.qc.copy_scene(int(from_index), int(to_index), swap=bool(swap))
+
+    def set_param_scene_mode(self, row: int, col: int, param_index: int, enabled: bool):
+        """Make a block parameter follow scenes (or stop following them)."""
+        self.policy.check_grid("シーンごとの値の設定")
+        with self._lock:
+            self.qc.set_param_scene_mode(row, col, int(param_index), bool(enabled))
+
+    def set_tempo(self, bpm: float):
+        """The preset's TEMPO in BPM, converted through the catalog's model 25000."""
+        self.policy.check_grid("テンポの書き込み")
+        with self._lock:
+            self.qc.set_tempo_param("TEMPO", real=float(bpm))
+
+    def set_stomp_assignment(self, row: int, col: int, footswitch: int):
+        self.policy.check_grid("フットスイッチの割り当て")
+        with self._lock:
+            self.qc.set_stomp_assignment(row, col, int(footswitch))
+
+    def clear_stomp_assignment(self, row: int, col: int):
+        self.policy.check_grid("フットスイッチの割り当ての解除")
+        with self._lock:
+            self.qc.clear_stomp_assignment(row, col)
+
+    def set_stomp_label(self, footswitch: int, label: str, single: bool = False):
+        self.policy.check_grid("フットスイッチの名前の書き込み")
+        with self._lock:
+            self.qc.set_stomp_label(int(footswitch), label, single=bool(single))
+
+    def set_stomp_momentary(self, footswitch: int, momentary: bool):
+        """Lands only on a footswitch driving exactly one block (silently ignored
+        otherwise, pyquadcortex): the caller reads back."""
+        self.policy.check_grid("フットスイッチのモーメンタリーの書き込み")
+        with self._lock:
+            self.qc.set_stomp_momentary(int(footswitch), bool(momentary))
+
+    def set_expression(self, row: int, col: int, param_index: int, pedal: int,
+                       minimum: float, maximum: float):
+        """Assign EXP ``pedal`` (1/2; 0 = none) to one block parameter."""
+        self.policy.check_grid("エクスプレッションペダルの割り当て")
+        with self._lock:
+            self.qc.set_expression(row, col, int(param_index), pedal=int(pedal),
+                                   minimum=float(minimum), maximum=float(maximum))
+
+    def set_gig_view(self, shown: bool):
+        """Refused: ``set_gig_view`` is on the safety rules' list of methods qcsuite
+        never calls (guard.FORBIDDEN_METHODS). Nothing is sent."""
+        guard.forbid("set_gig_view")
+
     def output_rows(self, preset=None) -> list[int]:
         """Rows whose output reaches Out 1/2 (directly or as MULTIPLE)."""
         p = preset if preset is not None else self.current_preset()
